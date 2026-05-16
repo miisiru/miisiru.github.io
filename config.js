@@ -43,13 +43,20 @@ export class UnitKit {
 }
 
 export class Unit {
-    constructor(unit_id, name, stats, kit) {
+    constructor(unit_id, name, stats, kit, lightcone = null, relics = []) {
         this.unit_id = unit_id;
         this.name = name;
-        this.base_stats = { spd: stats[0], max_energy: stats[1] };
-        this.max_energy = this.base_stats.max_energy;
         
-        // 오류 1: this.base_stats.speed -> this.base_stats.spd (stats[0]은 spd에 들어있습니다)
+        // 1. base_stats 복구 (stats[0]은 spd, stats[1]은 max_energy)
+        this.base_stats = {
+            spd: stats[0],
+            max_energy: stats[1]
+        };
+        
+        // 2. 광추 및 유물 데이터 복구
+        this.lightcone = lightcone;
+        this.relics = relics;
+        
         this.current_speed = this.base_stats.spd; 
         this.kit = kit;
         
@@ -58,17 +65,15 @@ export class Unit {
     }
 
     adjust_action_guage(advance_ratio, delay_ratio) {
-        let current_guage = this.current_action_value * this.current_speed
-        let new_guage = Math.max(0, current_guage - 10000 * (advance_ratio - delay_ratio))
-        console.log(current_guage, new_guage)
-        this.current_action_value = Math.max(0, new_guage / this.current_speed)
-        return this
+        let current_guage = this.current_action_value * this.current_speed;
+        let new_guage = Math.max(0, current_guage - 10000 * (advance_ratio - delay_ratio));
+        console.log(current_guage, new_guage);
+        this.current_action_value = Math.max(0, new_guage / this.current_speed);
+        return this;
     }
 
     modification(ability, ability_values) {
-        // 오류 2: ability = Ability... (대입) -> ability === Ability... (비교)
         if(ability === Ability.ActionGuageModification) {
-            // 오류 3: ability_values[0] -> ability_values.aa (선데이 킷에서 객체로 전달함)
             return this.adjust_action_guage(ability_values.aa || 0, ability_values.ad || 0);
         }
         return this;

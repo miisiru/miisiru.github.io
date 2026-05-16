@@ -33,8 +33,8 @@ const huokit = new UnitKit(
 );
 
 export const PRESET_UNITS = [
-    new Unit(1505, "에바네시아", [135, 60], evakit),
-    new Unit(1313, "선데이", [134, 50], sundaykit),
-    new Unit(1309, "로빈", [134, 50], robinkit),
-    new Unit(1217, "곽향", [134, 50], huokit)
+    new Unit(1505, "Evanescia", [135, 60], evakit),
+    new Unit(1313, "Sunday", [134, 50], sundaykit),
+    new Unit(1309, "Robin", [134, 50], robinkit),
+    new Unit(1217, "Huohuo", [134, 50], huokit)
 ];

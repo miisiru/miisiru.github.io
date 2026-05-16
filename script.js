@@ -3,6 +3,7 @@
  */
 import { Unit, fetchStarRailData } from './config.js';
 import { PRESET_UNITS } from './char.js';
+import { gameData, subStatData, mainStatData } from './config.js';
 
 
 let state = { 
@@ -106,8 +107,8 @@ function recalculate() {
         };
 
         // --- 행동 게이지 조작 (선데이 전스) ---
-        if (actionType === "S" && actor.name === "선데이") {
-            let target = simUnits.find(u => u.name === "에바네시아");
+        if (actionType === "S" && actor.name === "Sunday") {
+            let target = simUnits.find(u => u.name === "Evanescia");
             if (target) {
                 // AV 수치를 선데이와 "완벽히 동일하게" 복사
                 target.current_action_value = currentAV;
@@ -412,7 +413,69 @@ function confirmUltInsert() {
     state.selectedIdx = state.timeline.findIndex(t => t.id === newUlt.id);
 }
 
-// [추가] UID 데이터 호출 및 콘솔 출력 연동 함수
+// script.js 맨 하단 관련 코드를 이 코드로 교체하세요
+
+// 1. 실제 스타레일 원본 데이터 구조(detailInfo.avatarDetailList) 반영 로직
+function applyParsedData(rawData) {
+    // detailInfo 또는 avatarDetailList 구조 체크
+    let avatarList = null;
+    if (rawData && rawData.detailInfo && rawData.detailInfo.avatarDetailList) {
+        avatarList = rawData.detailInfo.avatarDetailList;
+    } else if (rawData && rawData.avatarDetailList) {
+        avatarList = rawData.avatarDetailList;
+    } else if (rawData && rawData.avatar_list) {
+        avatarList = rawData.avatar_list;
+    }
+
+    if (!avatarList || !Array.isArray(avatarList)) {
+        console.error("[오류] 유효한 캐릭터 데이터(avatarDetailList)를 찾을 수 없습니다.");
+        alert("유효한 스타레일 데이터 구조가 아닙니다. detailInfo 내용을 확인해 주세요.");
+        return false;
+    }
+
+    console.log("================ [성공] 스타레일 캐릭터 리스트 ================");
+    console.log(avatarList);
+    console.log("=========================================================");
+
+    const spdInputs = document.querySelectorAll('.spd-in');
+    const maxEInputs = document.querySelectorAll('.max-e-in');
+
+    PRESET_UNITS.forEach((presetUnit, index) => {
+        // 프리셋 캐릭터 이름(avatarId나 영문/국문 name 매칭)
+        // 원본 데이터 구조상 avatar.name 또는 게임데이터와 매칭을 시도합니다.
+        const matchedAvatar = avatarList.find(avatar => avatar.name === presetUnit.name || avatar._name === presetUnit.name);
+        
+        if (matchedAvatar) {
+            let finalSpd = presetUnit.base_stats.spd;
+            let finalMaxE = presetUnit.base_stats.max_energy;
+
+            // 1) 속도(SPD) 가져오기: 원본 데이터의 properties나 조립된 값을 활용
+            if (matchedAvatar.properties) {
+                finalSpd = matchedAvatar.properties.spd || finalSpd;
+                finalMaxE = matchedAvatar.properties.max_energy || finalMaxE;
+            } 
+            // 2) 만약 Enka/Myna 프로퍼티 구조일 경우 (기본값 Base + 추가값 Add)
+            else if (matchedAvatar.avatarProperties) {
+                // 원본의 유효 속도 속성(보통 1000001이 SPD 등)을 파싱하거나 보정된 값을 사용합니다.
+                // 여기서는 안전하게 제공된 상위 프로퍼티나 기존 프리셋 스탯을 백업으로 둡니다.
+                if (matchedAvatar.avatarProperties.spd) finalSpd = matchedAvatar.avatarProperties.spd;
+            }
+
+            // 입력창에 수치 반영
+            if (spdInputs[index]) spdInputs[index].value = parseFloat(finalSpd).toFixed(1);
+            if (maxEInputs[index]) maxEInputs[index].value = Math.round(finalMaxE);
+            
+            console.log(`[매칭 성공] ${presetUnit.name} -> SPD: ${finalSpd}, MaxEnergy: ${finalMaxE}`);
+        } else {
+            console.warn(`[매칭 실패] avatarDetailList 내에 ${presetUnit.name} 캐릭터가 없어 기본값을 유지합니다.`);
+        }
+    });
+
+    alert(`캐릭터 데이터 반영이 완료되었습니다.\n'Reset Simulation' 버튼을 누르면 새 스탯으로 타임라인이 재계산됩니다.`);
+    return true;
+}
+
+// 2. 기존 UID 불러오기 함수도 새 로직을 타도록 연동
 async function loadUserData() {
     const uidInput = document.getElementById('uid-input');
     const uid = uidInput.value ? uidInput.value.trim() : "";
@@ -423,17 +486,52 @@ async function loadUserData() {
     }
     
     console.log(`[시뮬레이터] UID ${uid}로 데이터를 요청합니다...`);
-    
-    // config.js에 이미 작성되어 있는 함수를 그대로 호출
     const rawData = await fetchStarRailData(uid);
-    
     if (rawData) {
-        console.log("================ [성공] 스타레일 원본 데이터 ================");
-        console.log(rawData);
-        console.log("=========================================================");
-        alert("데이터를 성공적으로 불러왔습니다. 개발자 도구 콘솔창(F12)을 확인해주세요.");
+        applyParsedData(rawData);
+    } else {
+        alert("데이터를 불러오는데 실패했거나 유효하지 않은 UID입니다.");
     }
 }
+
+// 3. 직접 입력 모달 이벤트 바인딩
+setTimeout(() => {
+    const modal = document.getElementById('json-modal');
+    const openBtn = document.getElementById('open-json-btn');
+    const closeBtn = document.getElementById('close-json-btn');
+    const submitBtn = document.getElementById('submit-json-btn');
+    const textarea = document.getElementById('json-textarea');
+
+    if (openBtn) {
+        openBtn.addEventListener('click', () => {
+            textarea.value = '';
+            modal.style.display = 'flex';
+        });
+        
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+        
+        submitBtn.addEventListener('click', () => {
+            const textValue = textarea.value.trim();
+            if (!textValue) {
+                alert('텍스트를 입력해주세요.');
+                return;
+            }
+            
+            try {
+                const parsed = JSON.parse(textValue);
+                const success = applyParsedData(parsed);
+                if (success) {
+                    modal.style.display = 'none';
+                }
+            } catch (e) {
+                console.error(e);
+                alert('올바른 JSON 형식이 아닙니다. 텍스트 내용을 확인해 주세요.');
+            }
+        });
+    }
+}, 100);
 
 // script.js 최하단에 추가된 코드
 window.selectPhase = selectPhase;
