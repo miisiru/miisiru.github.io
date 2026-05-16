@@ -72,7 +72,7 @@ class Unit {
 async function fetchStarRailData() {
     const uid = "833180943";
     // 이제 외부 프록시 사이트 대신 내 도메인의 /api/hsr 주소로 바로 요청합니다!
-    const url = `/api/hsr?uid=${uid}`; 
+    const url = `/api/anaxa?uid=${uid}`; 
     const resultElement = document.getElementById("result");
 
     resultElement.innerText = "로딩 중...";
