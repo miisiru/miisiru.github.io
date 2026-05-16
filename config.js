@@ -1,16 +1,22 @@
+import subStatData from './data/relic_sub_affixes.json' with { type: 'json' };
+import mainStatData from './data/relic_main_affixes.json' with { type: 'json' };
+import gameData from './data/game_data.json' with { type: 'json' };
+
+export { subStatData, mainStatData, gameData };
+
 /**
  * char.js - 캐릭터 및 클래스 데이터 정의
  */
-const Faction = { ALLY: 'ALLY', ENEMY: 'ENEMY' };
-const ActionType = { BASIC: 'BASIC', SKILL: 'SKILL', ULT: 'ULT' };
-const SkillType = { SUPPORT: 'SUPPORT', ATTACK: 'ATTACK' };
-const Ability = { ActionGuageModification: 'AG' };
+export const Faction = { ALLY: 'ALLY', ENEMY: 'ENEMY' };
+export const ActionType = { BASIC: 'BASIC', SKILL: 'SKILL', ULT: 'ULT' };
+export const SkillType = { SUPPORT: 'SUPPORT', ATTACK: 'ATTACK' };
+export const Ability = { ActionGuageModification: 'AG' };
 
-function action_value_from_spd(spd) {
+export function action_value_from_spd(spd) {
     return Math.max(1, 10000 / spd);
 }
 
-class ActionConfig {
+export class ActionConfig {
     constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, action_type = ActionType.BASIC, skill_type = SkillType.ATTACK, skill_ability = undefined, ability_values = {aa: 0, ad: 0}}) {
         this.name = name;
         this.sp_cost = sp_cost;
@@ -28,7 +34,7 @@ class ActionConfig {
     }
 }
 
-class UnitKit {
+export class UnitKit {
     constructor(basic, skill, ultimate) {
         this.basic = basic;
         this.skill = skill;
@@ -36,7 +42,7 @@ class UnitKit {
     }
 }
 
-class Unit {
+export class Unit {
     constructor(unit_id, name, stats, kit) {
         this.unit_id = unit_id;
         this.name = name;
@@ -69,13 +75,9 @@ class Unit {
     }
 }
 
-async function fetchStarRailData() {
-    const uid = "833180943";
+export async function fetchStarRailData(uid) {
     // 이제 외부 프록시 사이트 대신 내 도메인의 /api/hsr 주소로 바로 요청합니다!
     const url = `/api/anaxa?uid=${uid}`; 
-    const resultElement = document.getElementById("result");
-
-    resultElement.innerText = "로딩 중...";
     
     try {
         const response = await fetch(url);
@@ -83,12 +85,9 @@ async function fetchStarRailData() {
         
         const data = await response.json();
         
-        console.log("스타레일 데이터 로드 성공!");
-        console.log("유저 닉네임:", data.detailInfo?.nickname);
-        
-        resultElement.innerText = JSON.stringify(data, null, 2);
+        return data
     } catch (error) {
         console.error(error);
-        resultElement.innerText = "에러 발생";
+        alert(error)
     }
 }

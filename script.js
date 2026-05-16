@@ -1,6 +1,10 @@
 /**
  * script.js - 선데이 행게증 100% 로직 보완 및 엔진 통합
  */
+import { Unit, fetchStarRailData } from './config.js';
+import { PRESET_UNITS } from './char.js';
+
+
 let state = { 
     unitData: [],      
     actionPlans: {},   
@@ -21,6 +25,8 @@ PRESET_UNITS.forEach((u, i) => {
             </div>
         </div>`;
 });
+
+document.getElementById('uid-load-btn').addEventListener('click', loadUserData);
 
 function buildInitialTimeline() {
     const spdIn = document.querySelectorAll('.spd-in');
@@ -306,7 +312,7 @@ function render() {
                 const pEff = pNum <= 2 ? `SP: ${bSp} | E: ${bE}` : `SP: ${aSp} | E: ${aE}`;
 
                 cardHtml += `
-                    <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); selectPhase(${pNum})">
+                    <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); window.selectPhase(${pNum})">
                         <span class="card-phase-num">${pNum}</span>
                         <span class="card-phase-name">${pNames[pNum]}</span>
                         <span class="card-phase-effect">${pEff}</span>
@@ -321,7 +327,7 @@ function render() {
                         <div class="card-followup-item-expanded" onclick="event.stopPropagation();">
                             <span class="followup-tag">↳ Event</span>
                             <span class="followup-desc">${desc}</span>
-                            <span class="followup-del-btn" onclick="removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
+                            <span class="followup-del-btn" onclick="window.removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
                         </div>
                     `;
                 });
@@ -398,5 +404,36 @@ function confirmUltInsert() {
     document.getElementById('ult-insert-panel').style.display = 'none';
     state.selectedIdx = state.timeline.findIndex(t => t.id === newUlt.id);
 }
+
+// [추가] UID 데이터 호출 및 콘솔 출력 연동 함수
+async function loadUserData() {
+    const uidInput = document.getElementById('uid-input');
+    const uid = uidInput.value ? uidInput.value.trim() : "";
+    
+    if (!uid) {
+        alert("UID를 입력해주세요.");
+        return;
+    }
+    
+    console.log(`[시뮬레이터] UID ${uid}로 데이터를 요청합니다...`);
+    
+    // config.js에 이미 작성되어 있는 함수를 그대로 호출
+    const rawData = await fetchStarRailData(uid);
+    
+    if (rawData) {
+        console.log("================ [성공] 스타레일 원본 데이터 ================");
+        console.log(rawData);
+        console.log("=========================================================");
+        alert("데이터를 성공적으로 불러왔습니다. 개발자 도구 콘솔창(F12)을 확인해주세요.");
+    }
+}
+
+// script.js 최하단에 추가된 코드
+window.selectPhase = selectPhase;
+window.removeFollowUpEvent = removeFollowUpEvent;
+window.addFollowUpEvent = addFollowUpEvent;
+window.confirmUltInsert = confirmUltInsert;
+window.openUltPanel = openUltPanel;
+window.updateCurrentAction = updateCurrentAction;
 
 buildInitialTimeline();

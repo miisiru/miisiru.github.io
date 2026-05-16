@@ -1,3 +1,5 @@
+import { UnitKit, ActionConfig, ActionType, SkillType, Ability, Unit } from './config.js';
+
 const evakit = new UnitKit(
     new ActionConfig({ name: "평타", sp_gain: 1, energy_gain: 20 }),
     new ActionConfig({ name: "전스", sp_cost: 1, energy_gain: 30 }),
@@ -30,7 +32,7 @@ const huokit = new UnitKit(
     new ActionConfig({ name: "궁", energy_gain: 5, action_type: ActionType.ULT })
 );
 
-const PRESET_UNITS = [
+export const PRESET_UNITS = [
     new Unit(1505, "에바네시아", [135, 60], evakit),
     new Unit(1313, "선데이", [134, 50], sundaykit),
     new Unit(1309, "로빈", [134, 50], robinkit),
