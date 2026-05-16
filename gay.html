@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>스타레일 데이터 가져오기</title>
+</head>
+<body>
+
+    <h2>스타레일 UID 조회 테스트</h2>
+    <button onclick="fetchStarRailData()">데이터 가져오기</button>
+    <pre id="result">여기에 결과가 표시됩니다.</pre>
+
+    <script>
+    async function getStarRailData(uid) {
+        // 1. 조회할 오리지널 Enka API 주소
+        const enkaUrl = `https://enka.network/api/hsr/uid/${uid}/`;
+        
+        // 2. GitHub Pages의 CORS 차단을 뚫기 위해 allorigins 주소와 결합
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(enkaUrl)}`;
+
+        try {
+            const response = await fetch(proxyUrl);
+            
+            if (!response.ok) {
+            throw new Error(`프록시 서버 연결 실패 (상태코드: ${response.status})`);
+            }
+            
+            const wrapper = await response.json();
+            
+            // ⚠️ 중요: allorigins는 원본 JSON을 '문자열(String)'로 바꿔서 wrapper.contents에 담아줍니다.
+            // 그래서 이걸 다시 진짜 JSON 객체로 파싱하는 과정이 꼭 필요합니다.
+            if (!wrapper.contents) {
+            throw new Error("데이터를 불러오지 못했습니다. (UID를 확인하셨나요?)");
+            }
+            
+            const hsrData = JSON.parse(wrapper.contents);
+            
+            // 3. 성공적으로 가져온 데이터 활용하기
+            console.log("스타레일 데이터 로드 성공!");
+            console.log("유저 닉네임:", hsrData.playerInfo?.nickname);
+            console.log("유저 레벨:", hsrData.playerInfo?.level);
+            
+            return hsrData;
+
+        } catch (error) {
+            console.error("데이터 가져오기 실패:", error);
+            alert("데이터를 가져오는 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 사용 예시 (버튼 클릭 이벤트 등에 연결해서 사용하세요)
+    let srdata=getStarRailData("833180943")
+    console.log(srdata)
+    </script>
+</body>
+</html>
