@@ -28,6 +28,13 @@ PRESET_UNITS.forEach((u, i) => {
 
 document.getElementById('uid-load-btn').addEventListener('click', loadUserData);
 
+window.buildInitialTimeline = buildInitialTimeline;
+window.selectCard = selectCard;
+window.updateCurrentAction = updateCurrentAction;
+window.addFollowUpEvent = addFollowUpEvent;
+window.openUltPanel = openUltPanel;
+window.confirmUltInsert = confirmUltInsert;
+
 function buildInitialTimeline() {
     const spdIn = document.querySelectorAll('.spd-in');
     const maxEIn = document.querySelectorAll('.max-e-in');
