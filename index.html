@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>HSR Mechanic Simulator V5</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="panel">
+            <h3>Settings</h3>
+            <div id="spd-inputs"></div>
+            <div style="margin-top:10px;">
+                <label>AV Limit</label>
+                <input type="number" id="limit-av" value="500">
+            </div>
+            <button class="main-btn" onclick="buildInitialTimeline()">Reset Simulation</button>
+        </aside>
+
+        <section class="timeline-panel">
+            <div class="panel-header"><h3>TIMELINE</h3></div>
+            <div id="timeline-list" class="scroll-area"></div>
+        </section>
+
+        <main class="control-panel">
+            <div class="panel" id="event-management-panel">
+                <h3 style="margin-top: 0; margin-bottom: 10px; color: var(--gold);">이벤트 관리</h3>
+                <p style="font-size:11px; color:#94a3b8; margin:0 0 12px 0;">* 타임라인 카드를 확장하고 페이즈를 선택하여 Follow-up 이벤트를 구성하세요.</p>
+                
+                <div id="event-form-container" style="display: none; flex-direction: column; gap: 10px;">
+                    <div id="selected-phase-info" style="font-size:12px; color:var(--accent); font-weight:bold; border-bottom: 1px solid #2d3748; padding-bottom: 6px;"></div>
+                    
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex: 1; display:flex; flex-direction:column; gap:4px;">
+                            <label style="font-size:11px; color:#94a3b8;">이벤트 종류</label>
+                            <select id="event-type-select" onchange="toggleEventValueInput()" style="padding:6px; background:var(--card); color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;">
+                                <option value="Ult">궁극기 (Ult)</option>
+                                <option value="Gauge">행동게이지 증가/감소</option>
+                            </select>
+                        </div>
+
+                        <div style="flex: 1; display:flex; flex-direction:column; gap:4px;">
+                            <label style="font-size:11px; color:#94a3b8;">대상 유닛</label>
+                            <select id="event-target-select" style="padding:6px; background:var(--card); color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;">
+                                </select>
+                        </div>
+                    </div>
+
+                    <div id="event-value-block" style="display:none; flex-direction:column; gap:4px;">
+                        <label style="font-size:11px; color:#94a3b8;">게이지 변동량 (%)</label>
+                        <input type="number" id="event-value-input" value="20" placeholder="예: 20 (당기기), -20 (밀기)" style="padding:6px; background:var(--card); color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;">
+                    </div>
+
+                    <button class="main-btn" onclick="addFollowUpEvent()" style="width: 100%; padding: 8px; margin-top: 4px;">이벤트 추가</button>
+                </div>
+                
+                <div id="event-empty-notice" style="font-size:12px; color:#6b7280; text-align:center; padding:20px 0; border: 1px dashed #2d3748; border-radius:4px;">
+                    타임라인 카드를 클릭해 확장한 후, 원하는 페이즈(1~4)를 선택해 주세요.
+                </div>
+            </div>
+
+            <div class="focus-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h2 id="focus-name" style="margin:0;">Unit Select</h2>
+                    <div class="energy-info" style="text-align:right;">
+                        <span id="energy-text-val" style="font-size:12px; color:var(--gold);">0/0</span>
+                        <div class="energy-bar"><div id="energy-fill"></div></div>
+                    </div>
+                </div>
+                <div style="margin-top:15px; display:flex; gap:10px;">
+                    <button class="action-btn" style="flex: 1;" onclick="updateCurrentAction('B')">Basic (B)</button>
+                    <button class="action-btn skill" style="flex: 1;" onclick="updateCurrentAction('S')">Skill (S)</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="char.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
