@@ -1,4 +1,5 @@
-import { UnitKit, ActionConfig, ActionType, SkillType, Ability, Unit } from './config.js';
+import { UnitKit, ActionConfig, ActionType, SkillType, Ability, Unit, LightCone } from './config.js';
+import { getBaseLCId } from './lc.js'
 
 const evakit = new UnitKit(
     new ActionConfig({ name: "평타", sp_gain: 1, energy_gain: 20 }),
@@ -32,9 +33,16 @@ const huokit = new UnitKit(
     new ActionConfig({ name: "궁", energy_gain: 5, action_type: ActionType.ULT })
 );
 
+const Evanescia = new Unit({unit_id: 1505, spd: 135, kit: evakit, lightcone: new LightCone(getBaseLCId(1505))})
+const Sunday = new Unit({unit_id: 1313, spd: 134, kit: sundaykit, lightcone: new LightCone(getBaseLCId(1313))})
+const Robin = new Unit({unit_id: 1309, spd: 134, kit: robinkit, lightcone: new LightCone(getBaseLCId(1309))})
+const Huohuo = new Unit({unit_id: 1217, spd: 134, kit: huokit, lightcone: new LightCone(getBaseLCId(1217))})
+
+export const availiableCharacters = [Evanescia, Sunday, Robin, Huohuo]
+
 export const PRESET_UNITS = [
-    new Unit(1505, "Evanescia", [135, 60], evakit),
-    new Unit(1313, "Sunday", [134, 50], sundaykit),
-    new Unit(1309, "Robin", [134, 50], robinkit),
-    new Unit(1217, "Huohuo", [134, 50], huokit)
+    Evanescia,
+    Sunday,
+    Robin,
+    Huohuo
 ];

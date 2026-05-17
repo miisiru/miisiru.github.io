@@ -1,7 +1,7 @@
 /**
  * script.js - 선데이 행게증 100% 로직 보완 및 엔진 통합
  */
-import { Unit, fetchStarRailData } from './config.js';
+import { Unit, fetchStarRailData, LightCone } from './config.js';
 import { PRESET_UNITS } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
 
@@ -11,20 +11,60 @@ let state = {
     actionPlans: {},   
     timeline: [],      
     selectedIdx: null, 
-    selectedPhase: null 
+    selectedPhase: null,
+    selectedLightCones: Array(PRESET_UNITS.length).fill(null)
 };
 
-// 1. 초기화 및 유닛 로드
 const spdDiv = document.getElementById('spd-inputs');
+
+const lightCones = gameData && gameData.lightCones 
+    ? (Array.isArray(gameData.lightCones) ? gameData.lightCones : Object.values(gameData.lightCones)) 
+    : [];
+
+let lcOptions = `<option value="">광추 미선택</option>`;
+lightCones.forEach(lc => {
+    lcOptions += `<option value="${lc.id}">${lc.name}</option>`;
+});
+
 PRESET_UNITS.forEach((u, i) => {
     spdDiv.innerHTML += `
-        <div style="margin-bottom:8px;">
-            <label style="font-weight:bold;">${u.name}</label>
-            <div style="display:flex; gap:5px; margin-top:2px;">
-                <input type="number" class="spd-in" value="${u.base_stats.spd}">
-                <input type="number" class="max-e-in" value="${u.base_stats.max_energy}">
+        <div class="char-setting-card">
+            <div class="char-card-header">
+                <span class="char-card-title">${u.name}</span>
+                <div class="card-icon-group">
+                    <div class="ui-icon-btn">
+                        <img src="./imgs/site_ui/lc_icon.png" onerror="this.style.opacity='0.5'">
+                        <span class="lc-selected-name" id="lc-label-${i}">광추 선택</span>
+                        <select class="lc-dropdown" data-index="${i}" class="invisible-select" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                            ${lcOptions}
+                        </select>
+                    </div>
+                    <button type="button" class="ui-icon-btn" title="유물 관리">
+                        <img src="./imgs/site_ui/relic_icon.png" onerror="this.style.opacity='0.5'">
+                    </button>
+                </div>
+            </div>
+            <div style="display: flex; gap: 5px;">
+                <input type="number" class="spd-in" value="${u.spd}" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:4px; border-radius:4px; font-size:11px;">
+                <input type="number" class="max-e-in" value="${u.max_energy}" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:4px; border-radius:4px; font-size:11px;">
             </div>
         </div>`;
+});
+
+document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
+    dropdown.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.getAttribute('data-index'));
+        const id = e.target.value;
+        state.selectedLightCones[idx] = id || null;
+        
+        const label = document.getElementById(`lc-label-${idx}`);
+        if (id) {
+            const found = lightCones.find(lc => String(lc.id) === String(id));
+            label.textContent = found ? found.name : "선택됨";
+        } else {
+            label.textContent = "광추 선택";
+        }
+    });
 });
 
 document.getElementById('uid-load-btn').addEventListener('click', loadUserData);
@@ -41,8 +81,9 @@ function buildInitialTimeline() {
     const maxEIn = document.querySelectorAll('.max-e-in');
     
     state.unitData = PRESET_UNITS.map((p, i) => {
-        const u = new Unit(p.unit_id, p.name, [parseFloat(spdIn[i].value), parseFloat(maxEIn[i].value)], p.kit);
-        state.actionPlans[u.unit_id] = Array(30).fill("B"); // 넉넉하게 30턴 계획
+        const assignedLcId = state.selectedLightCones[i];
+        const u = new Unit({unit_id: p.unit_id, spd: parseFloat(spdIn[i].value), kit: p.kit, lightcone: new LightCone(assignedLcId)});
+        state.actionPlans[u.unit_id] = Array(100).fill("B"); // 넉넉하게 100턴 계획
         return u;
     });
 
@@ -58,7 +99,7 @@ function recalculate() {
     
     // 1. 시뮬레이션용 유닛 초기화 (AV 가산점 제거, 순수 AV 사용)
     let simUnits = state.unitData.map((u, i) => {
-        let nu = new Unit(u.unit_id, u.name, [u.base_stats.spd, u.base_stats.max_energy], u.kit);
+        let nu = new Unit({unit_id: u.unit_id, spd: u.spd, kit: u.kit});
         nu.energy = 0; 
         nu.turnCount = 0; 
         nu.partyIndex = i;        // 파티 순서 (동일 AV 시 2순위)
@@ -464,6 +505,22 @@ function applyParsedData(rawData) {
             // 입력창에 수치 반영
             if (spdInputs[index]) spdInputs[index].value = parseFloat(finalSpd).toFixed(1);
             if (maxEInputs[index]) maxEInputs[index].value = Math.round(finalMaxE);
+
+            // 💡 [추가] 외부 데이터 로드 시 캐릭터가 장착 중인 광추 자동 동기화
+            let lcId = matchedAvatar.equipment?.id || matchedAvatar.lightCone?.id || matchedAvatar.light_cone?.id;
+            const lcDropdowns = document.querySelectorAll('.lc-dropdown');
+
+            if (lcId && lcDropdowns[index]) {
+                lcDropdowns[index].value = lcId; // 드롭다운 선택값 변경
+                state.selectedLightCones[index] = lcId; // 내부 상태에 광추 ID 저장
+                
+                const label = document.getElementById(`lc-label-${index}`);
+                if (label) {
+                    // 전역변수 lightCones에서 일치하는 광추 이름을 찾아 라벨 변경
+                    const found = lightCones.find(lc => String(lc.id) === String(lcId));
+                    label.textContent = found ? found.name : "선택됨";
+                }
+            }
             
             console.log(`[매칭 성공] ${presetUnit.name} -> SPD: ${finalSpd}, MaxEnergy: ${finalMaxE}`);
         } else {
@@ -540,5 +597,3 @@ window.addFollowUpEvent = addFollowUpEvent;
 window.confirmUltInsert = confirmUltInsert;
 window.openUltPanel = openUltPanel;
 window.updateCurrentAction = updateCurrentAction;
-
-buildInitialTimeline();

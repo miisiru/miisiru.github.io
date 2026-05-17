@@ -34,6 +34,19 @@ export class ActionConfig {
     }
 }
 
+export class LightCone {
+    constructor(id, superimposition=undefined) {
+        this.id = id
+        this.name = gameData.lightCones[id].name
+        this.rarity = gameData.lightCones[id].rarity
+        this.base_hp = gameData.lightCones[id].stats.HP
+        this.base_atk = gameData.lightCones[id].stats.ATK
+        this.base_def = gameData.lightCones[id].stats.DEF
+        this.superimpostion = superimposition ?? (this.rarity === 5 ? 1 : 5);
+        this.superimposition_values = gameData.lightCones[id].superimpositions
+    }
+}
+
 export class UnitKit {
     constructor(basic, skill, ultimate) {
         this.basic = basic;
@@ -43,25 +56,27 @@ export class UnitKit {
 }
 
 export class Unit {
-    constructor(unit_id, name, stats, kit, lightcone = null, relics = []) {
+    constructor({unit_id, name=undefined, spd, max_energy=undefined, kit, lightcone = undefined, relics = []}) {
         this.unit_id = unit_id;
-        this.name = name;
+        this.name = name ?? gameData.characters[this.unit_id].name
+        this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
         
-        // 1. base_stats 복구 (stats[0]은 spd, stats[1]은 max_energy)
-        this.base_stats = {
-            spd: stats[0],
-            max_energy: stats[1]
-        };
+        this.spd = spd
         
         // 2. 광추 및 유물 데이터 복구
         this.lightcone = lightcone;
         this.relics = relics;
         
-        this.current_speed = this.base_stats.spd; 
+        this.current_speed = this.spd; 
         this.kit = kit;
         
         this.base_action_value = action_value_from_spd(this.current_speed);
         this.current_action_value = this.base_action_value;
+
+        this.base_spd = gameData.characters[this.unit_id].stats.SPD
+        this.base_hp = gameData.characters[this.unit_id].stats.HP
+        this.base_atk = gameData.characters[this.unit_id].stats.ATK
+        this.base_def = gameData.characters[this.unit_id].stats.DEF
     }
 
     adjust_action_guage(advance_ratio, delay_ratio) {
