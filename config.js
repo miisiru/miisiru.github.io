@@ -56,7 +56,7 @@ export class UnitKit {
 }
 
 export class Unit {
-    constructor({unit_id, name=undefined, spd, max_energy=undefined, kit, lightcone = undefined, relics = []}) {
+    constructor({unit_id, name=undefined, spd, max_energy=undefined, kit, lightcone, relics = []}) {
         this.unit_id = unit_id;
         this.name = name ?? gameData.characters[this.unit_id].name
         this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
@@ -74,9 +74,9 @@ export class Unit {
         this.current_action_value = this.base_action_value;
 
         this.base_spd = gameData.characters[this.unit_id].stats.SPD
-        this.base_hp = gameData.characters[this.unit_id].stats.HP
-        this.base_atk = gameData.characters[this.unit_id].stats.ATK
-        this.base_def = gameData.characters[this.unit_id].stats.DEF
+        this.base_hp = gameData.characters[this.unit_id].stats.HP + gameData.lightCones[this.lightcone.id].stats.HP
+        this.base_atk = gameData.characters[this.unit_id].stats.ATK + gameData.lightCones[this.lightcone.id].stats.ATK
+        this.base_def = gameData.characters[this.unit_id].stats.DEF + gameData.lightCones[this.lightcone.id].stats.DEF
     }
 
     adjust_action_guage(advance_ratio, delay_ratio) {
