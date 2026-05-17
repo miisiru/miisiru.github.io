@@ -476,3 +476,28 @@ aside {
     opacity: 0;
     cursor: pointer;
 }
+
+.relic-tag {
+    background: #1e293b; border: 1px solid #3b82f6;
+    padding: 4px 8px; border-radius: 4px; font-size: 11px;
+    display: flex; align-items: center; gap: 6px;
+}
+.relic-tag .del-btn, .sub-stat-item .del-btn {
+    color: #ef4444; cursor: pointer; font-weight: bold; font-size: 13px;
+}
+.sub-stat-item {
+    background: #161b2a; border: 1px solid #334155;
+    padding: 8px; border-radius: 4px;
+    display: flex; justify-content: space-between; align-items: center; font-size: 12px;
+}
+.sub-stat-controls { display: flex; align-items: center; gap: 8px; }
+.roll-btn {
+    background: #334155; border: none; color: white;
+    border-radius: 4px; width: 22px; height: 22px; cursor: pointer;
+    display: flex; justify-content: center; align-items: center; font-weight: bold;
+}
+.roll-btn:hover { background: #475569; }
+.quality-select {
+    background: #0b0f1a; border: 1px solid #4b5563; color: var(--gold);
+    border-radius: 4px; font-size: 11px; padding: 3px; cursor: pointer;
+}

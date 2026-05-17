@@ -12,7 +12,8 @@ let state = {
     timeline: [],      
     selectedIdx: null, 
     selectedPhase: null,
-    selectedLightCones: Array(PRESET_UNITS.length).fill(null)
+    selectedLightCones: Array(PRESET_UNITS.length).fill(null),
+    selectedRelics: Array(PRESET_UNITS.length).fill(null).map(() => ({ main: [], sub: [] }))
 };
 
 const spdDiv = document.getElementById('spd-inputs');
@@ -39,8 +40,9 @@ PRESET_UNITS.forEach((u, i) => {
                             ${lcOptions}
                         </select>
                     </div>
-                    <button type="button" class="ui-icon-btn" title="유물 관리">
+                    <button type="button" class="ui-icon-btn" title="유물 관리" onclick="window.openRelicModal(${i}, '${u.name}')">
                         <img src="./imgs/site_ui/relic_icon.png" onerror="this.style.opacity='0.5'">
+                        <span class="lc-selected-name" id="relic-label-${i}">유물 설정</span>
                     </button>
                 </div>
             </div>
@@ -58,12 +60,27 @@ document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
         state.selectedLightCones[idx] = id || null;
         
         const label = document.getElementById(`lc-label-${idx}`);
+        const parentBtn = dropdown.parentElement;
+        
         if (id) {
-            const found = lightCones.find(lc => String(lc.id) === String(id));
-            label.textContent = found ? found.name : "선택됨";
+            // 1. 광추가 선택되었을 때: 글자색과 버튼 테두리 모두 산뜻한 초록색 활성화!
+            label.textContent = "선택됨";
+            label.style.color = "var(--success)";
+            if (parentBtn) {
+                parentBtn.style.borderColor = "var(--success)";
+            }
         } else {
+            // 2. 💡 [진짜 해결] 광추 미선택(해제) 시 원래의 이쁜 주황색 글씨로 정확하게 롤백!
             label.textContent = "광추 선택";
+            label.style.color = "var(--gold)"; // 글자색을 원래 주황색(var(--gold))으로 복구!
+            if (parentBtn) {
+                parentBtn.style.borderColor = "#475569"; // 테두리는 기본 회색 스타일 유지
+                parentBtn.style.outline = "none";
+            }
         }
+        
+        // 브라우저 강제 포커스로 인한 주황 테두리 현상 방지를 위해 blur 처리
+        dropdown.blur();
     });
 });
 
@@ -82,7 +99,16 @@ function buildInitialTimeline() {
     
     state.unitData = PRESET_UNITS.map((p, i) => {
         const assignedLcId = state.selectedLightCones[i];
-        const u = new Unit({unit_id: p.unit_id, spd: parseFloat(spdIn[i].value), kit: p.kit, lightcone: new LightCone(assignedLcId)});
+        const assignedRelics = state.selectedRelics ? state.selectedRelics[i] : null;
+        
+        const u = new Unit({
+            unit_id: p.unit_id,
+            spd: parseFloat(spdIn[i].value),
+            kit: p.kit,
+            lightcone: new LightCone(assignedLcId),
+            relics: assignedRelics
+        });
+        
         state.actionPlans[u.unit_id] = Array(100).fill("B"); // 넉넉하게 100턴 계획
         return u;
     });
@@ -99,7 +125,7 @@ function recalculate() {
     
     // 1. 시뮬레이션용 유닛 초기화 (AV 가산점 제거, 순수 AV 사용)
     let simUnits = state.unitData.map((u, i) => {
-        let nu = new Unit({unit_id: u.unit_id, spd: u.spd, kit: u.kit});
+        let nu = u
         nu.energy = 0; 
         nu.turnCount = 0; 
         nu.partyIndex = i;        // 파티 순서 (동일 AV 시 2순위)
@@ -509,16 +535,15 @@ function applyParsedData(rawData) {
             // 💡 [추가] 외부 데이터 로드 시 캐릭터가 장착 중인 광추 자동 동기화
             let lcId = matchedAvatar.equipment?.id || matchedAvatar.lightCone?.id || matchedAvatar.light_cone?.id;
             const lcDropdowns = document.querySelectorAll('.lc-dropdown');
-
+            
             if (lcId && lcDropdowns[index]) {
-                lcDropdowns[index].value = lcId; // 드롭다운 선택값 변경
-                state.selectedLightCones[index] = lcId; // 내부 상태에 광추 ID 저장
-                
+                lcDropdowns[index].value = lcId;
+                state.selectedLightCones[index] = lcId;
                 const label = document.getElementById(`lc-label-${index}`);
                 if (label) {
-                    // 전역변수 lightCones에서 일치하는 광추 이름을 찾아 라벨 변경
-                    const found = lightCones.find(lc => String(lc.id) === String(lcId));
-                    label.textContent = found ? found.name : "선택됨";
+                    label.textContent = "선택됨";
+                    label.style.color = "var(--success)";
+                    label.parentElement.style.borderColor = "var(--success)";
                 }
             }
             
@@ -597,3 +622,117 @@ window.addFollowUpEvent = addFollowUpEvent;
 window.confirmUltInsert = confirmUltInsert;
 window.openUltPanel = openUltPanel;
 window.updateCurrentAction = updateCurrentAction;
+
+// ================= [유물 모달 전용 로직 - 중복 허용 및 배열 기반 고도화] =================
+let currentRelicIdx = null;
+let tempRelicData = { main: [], sub: [] };
+
+window.openRelicModal = function(idx, charName) {
+    currentRelicIdx = idx;
+    tempRelicData = JSON.parse(JSON.stringify(state.selectedRelics[idx]));
+    
+    document.getElementById('relic-modal-title').textContent = `${charName} - 유물 설정`;
+    document.getElementById('relic-modal').style.display = 'flex';
+    renderRelicModal();
+};
+
+function renderRelicModal() {
+    // 1. 주옵션 렌더링
+    const mainList = document.getElementById('relic-main-list');
+    mainList.innerHTML = '';
+    tempRelicData.main.forEach((stat, i) => {
+        mainList.innerHTML += `
+            <div class="relic-tag">
+                <span>${stat}</span>
+                <span class="del-btn" onclick="removeMainStat(${i})">×</span>
+            </div>`;
+    });
+
+    // 2. 부옵션 렌더링 (동일 옵션이더라도 개별 행으로 독립 배치)
+    const subList = document.getElementById('relic-sub-list');
+    subList.innerHTML = '';
+    tempRelicData.sub.forEach((item, sIdx) => {
+        subList.innerHTML += `
+            <div class="sub-stat-item">
+                <div style="font-weight:bold;">${item.name}</div>
+                <div class="sub-stat-controls">
+                    <select class="quality-select" onchange="updateSubQuality(${sIdx}, this.value)">
+                        <option value="low" ${item.quality === 'low' ? 'selected' : ''}>하옵</option>
+                        <option value="mid" ${item.quality === 'mid' ? 'selected' : ''}>중옵</option>
+                        <option value="high" ${item.quality === 'high' ? 'selected' : ''}>상옵</option>
+                    </select>
+                    <button class="roll-btn" onclick="updateSubCount(${sIdx}, -1)">-</button>
+                    <span style="min-width: 20px; text-align: center; color: var(--success); font-weight: bold;">${item.count}</span>
+                    <button class="roll-btn" onclick="updateSubCount(${sIdx}, 1)">+</button>
+                    <span class="del-btn" style="margin-left: 5px;" onclick="removeSubStat(${sIdx})">×</span>
+                </div>
+            </div>`;
+    });
+}
+
+// 모달 내부 이벤트 핸들러 및 리스너 위임
+setTimeout(() => {
+    document.getElementById('add-main-stat-btn').addEventListener('click', () => {
+        const val = document.getElementById('relic-main-select').value;
+        if (tempRelicData.main.length >= 4) {
+            alert("주옵션은 최대 4개까지만 설정할 수 있습니다.");
+            return;
+        }
+        tempRelicData.main.push(val);
+        renderRelicModal();
+    });
+
+    // 💥 중복된 옵션이라도 기존 데이터를 덮어쓰지 않고 새로운 행으로 무조건 추가합니다.
+    document.getElementById('add-sub-stat-btn').addEventListener('click', () => {
+        const val = document.getElementById('relic-sub-select').value;
+        tempRelicData.sub.push({
+            name: val,
+            count: 1,
+            quality: 'mid'
+        });
+        renderRelicModal();
+    });
+
+    document.getElementById('close-relic-btn').addEventListener('click', () => {
+        document.getElementById('relic-modal').style.display = 'none';
+    });
+
+    document.getElementById('save-relic-btn').addEventListener('click', () => {
+        state.selectedRelics[currentRelicIdx] = JSON.parse(JSON.stringify(tempRelicData));
+        document.getElementById('relic-modal').style.display = 'none';
+        
+        const label = document.getElementById(`relic-label-${currentRelicIdx}`);
+        const btn = label ? label.parentElement : null;
+        if (label && btn) {
+            const mainLen = tempRelicData.main.length;
+            const subRolls = tempRelicData.sub.reduce((acc, cur) => acc + cur.count, 0);
+            
+            if (mainLen > 0 || subRolls > 0) {
+                // 유물이 설정되어 있으면 초록색 표시
+                label.textContent = "설정됨";
+                label.style.color = "var(--success)";
+                btn.style.borderColor = "var(--success)";
+            } else {
+                // 아무것도 없으면 기본 상태로 원상복구
+                label.textContent = "유물 선택";
+                label.style.color = "var(--gold)";
+                btn.style.borderColor = "#475569";
+            }
+        }
+        console.log(`[유물 저장 완료] 인덱스 ${currentRelicIdx}:`, state.selectedRelics[currentRelicIdx]);
+    });
+}, 100);
+
+// 고유 인덱스 기반 데이터 조작 유틸 함수
+window.removeMainStat = (idx) => { tempRelicData.main.splice(idx, 1); renderRelicModal(); };
+window.removeSubStat = (sIdx) => { tempRelicData.sub.splice(sIdx, 1); renderRelicModal(); };
+window.updateSubCount = (sIdx, delta) => {
+    tempRelicData.sub[sIdx].count += delta;
+    if (tempRelicData.sub[sIdx].count <= 0) {
+        tempRelicData.sub.splice(sIdx, 1);
+    }
+    renderRelicModal();
+};
+window.updateSubQuality = (sIdx, quality) => {
+    tempRelicData.sub[sIdx].quality = quality;
+};
