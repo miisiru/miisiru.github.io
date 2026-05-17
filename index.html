@@ -41,6 +41,8 @@
                         <h4 style="margin-top: 0; margin-bottom: 8px; color: #cbd5e1; font-size: 13px;">주옵션 추가</h4>
                         <div style="display: flex; gap: 8px; margin-bottom: 10px;">
                             <select id="relic-main-select" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:6px; border-radius:4px; font-size:12px;">
+                                <option value="HPDelta">HP</option>
+                                <option value="AttackDelta">ATK</option>
                                 <option value="HPAddedRatio">HP%</option>
                                 <option value="AttackAddedRatio">ATK%</option>
                                 <option value="DefenceAddedRatio">DEF%</option>
@@ -48,10 +50,15 @@
                                 <option value="CriticalChanceBase">CRIT Rate</option>
                                 <option value="CriticalDamageBase">CRIT DMG</option>
                                 <option value="StatusProbabilityBase">Effect Hit Rate</option>
-                                <option value="Outgoing Healing Boost">치유량 보너스</option>
+                                <option value="HealRatioBase">치유량 보너스</option>
                                 <option value="SPRatioBase">에너지 회복효율</option>
-                                <option value="PhysicalAddedRatio">속성 피해 증가</option>
                                 <option value="BreakDamageAddedRatioBase">Break Effect</option>
+                                <option value="PhysicalAddedRatio">물리 속성 피해 증가</option>
+                                <option value="IceAddedRatio">얼음 속성 피해 증가</option>
+                                <option value="ThunderAddedRatio">번개 속성 피해 증가</option>
+                                <option value="WindAddedRatio">바람 속성 피해 증가</option>
+                                <option value="QuantumAddedRatio">양자 속성 피해 증가</option>
+                                <option value="ImaginaryAddedRatio">허수 속성 피해 증가</option>
                             </select>
                             <button class="main-btn" id="add-main-stat-btn" style="margin:0; padding: 6px 12px;">추가</button>
                         </div>
@@ -59,7 +66,7 @@
                     </div>
 
                     <div style="margin-bottom: 20px; background: #0f172a; padding: 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <h4 style="margin-top: 0; margin-bottom: 8px; color: #cbd5e1; font-size: 13px;">부옵션 추가 (횟수 총합)</h4>
+                        <h4 style="margin-top: 0; margin-bottom: 8px; color: #cbd5e1; font-size: 13px;">부옵션 추가</h4>
                         <div style="display: flex; gap: 8px; margin-bottom: 10px;">
                             <select id="relic-sub-select" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:6px; border-radius:4px; font-size:12px;">
                                 <option value="HPDelta">HP (고정)</option>
@@ -83,6 +90,49 @@
                     <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
                         <button class="main-btn" id="close-relic-btn" style="background:#4b5563; margin:0; padding: 6px 12px;">취소</button>
                         <button class="main-btn" id="save-relic-btn" style="margin:0; padding: 6px 12px;">저장</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="detail-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(3,7,18,0.9); z-index:2000; justify-content:center; align-items:center;">
+                <div style="position:relative; width: 880px; max-width: 95%; background: #0e1322; border: 1px solid #1e293b; border-radius: 12px; display: flex; overflow: hidden; height: 520px; color: #f3f4f6; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7);">
+                    
+                    <div style="flex: 1.1; position: relative; background: linear-gradient(135deg, #1e293b, #0f172a); display: flex; align-items: center; justify-content: center; overflow: hidden; border-right: 1px solid #1e293b;">
+                        <img id="detail-char-img" src="" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
+                        <div style="position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, #0e1322 15%, rgba(14,19,34,0)); padding: 35px 20px 20px 20px; box-sizing: border-box;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <img id="detail-element-icon" src="" style="width: 28px; height: 28px; object-fit: contain;">
+                                <h2 id="detail-char-name" style="margin: 0; font-size: 26px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.9); color: #ffffff;">캐릭터 이름</h2>
+                            </div>
+                            <div id="detail-stars" style="display: flex; gap: 3px; margin-top: 8px;">
+                                </div>
+                        </div>
+                    </div>
+                    
+                    <div style="flex: 1.4; padding: 30px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; background: #121826; overflow-y: auto;">
+                        
+                        <div style="background: #182030; border: 1px solid #26324d; border-radius: 8px; padding: 14px; display: flex; gap: 16px; align-items: center;">
+                            <div style="width: 55px; height: 72px; background: #090d16; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #3b4f76;">
+                                <img id="detail-lc-img" src="" style="width: 100%; height: 100%; object-fit: cover;">
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+                                    <img id="detail-path-icon" src="" style="width: 18px; height: 18px; object-fit: contain; opacity: 0.9;">
+                                    <span id="detail-lc-name" style="font-weight: bold; color: var(--gold); font-size: 14px;">광추 이름</span>
+                                </div>
+                                <div style="font-size: 12px; color: #64748b;">Lv. 80 / <span style="color: #38bdf8;">중첩 V</span></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 style="margin: 0 0 12px 0; color: #64748b; font-size: 12px; font-weight: bold; letter-spacing: 0.08em;">마을 스펙 (BASE STATS)</h4>
+                            <div id="detail-stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                </div>
+                        </div>
+                        
+                        <div style="margin-top: auto; text-align: right; border-top: 1px solid #1e293b; padding-top: 15px;">
+                            <button class="main-btn" id="close-detail-btn" style="margin: 0; padding: 8px 24px; background: #1e293b; border: 1px solid #475569; font-size: 13px;">창 닫기</button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -12,8 +12,8 @@ let state = {
     timeline: [],      
     selectedIdx: null, 
     selectedPhase: null,
-    selectedLightCones: Array(PRESET_UNITS.length).fill(null),
-    selectedRelics: Array(PRESET_UNITS.length).fill(null).map(() => ({ main: [], sub: [] }))
+    selectedLightCones: PRESET_UNITS.map(u => u.lightcone ? u.lightcone.id : null),
+    selectedRelics: PRESET_UNITS.map(u => u.relics ? JSON.parse(JSON.stringify(u.relics)) : { main: [], sub: [] })
 };
 
 const spdDiv = document.getElementById('spd-inputs');
@@ -28,32 +28,53 @@ lightCones.forEach(lc => {
 });
 
 PRESET_UNITS.forEach((u, i) => {
+    // 💡 [추가] 초기 로드 시점의 광추 및 유물 데이터 유무 검사
+    const initLcId = state.selectedLightCones[i];
+    const initRelic = state.selectedRelics[i];
+    
+    const hasLc = initLcId !== null && initLcId !== undefined && initLcId !== "";
+    const hasRelic = initRelic && ((initRelic.main && initRelic.main.length > 0) || (initRelic.sub && initRelic.sub.length > 0));
+
+    // 광추 UI 스타일 매핑
+    const lcText = hasLc ? "선택됨" : "광추 선택";
+    const lcColor = hasLc ? "var(--success)" : "var(--gold)";
+    const lcBorder = hasLc ? "var(--success)" : "#475569";
+
+    // 유물 UI 스타일 매핑
+    const relicText = hasRelic ? "설정됨" : "유물 선택";
+    const relicColor = hasRelic ? "var(--success)" : "var(--gold)";
+    const relicBorder = hasRelic ? "var(--success)" : "#475569";
+
     spdDiv.innerHTML += `
         <div class="char-setting-card">
             <div class="char-card-header">
                 <span class="char-card-title">${u.name}</span>
                 <div class="card-icon-group">
-                    <div class="ui-icon-btn">
+                    <div class="ui-icon-btn" style="border-color: ${lcBorder}; position: relative;">
                         <img src="./imgs/site_ui/lc_icon.png" onerror="this.style.opacity='0.5'">
-                        <span class="lc-selected-name" id="lc-label-${i}">광추 선택</span>
-                        <select class="lc-dropdown" data-index="${i}" class="invisible-select" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                        <span class="lc-selected-name" id="lc-label-${i}" style="color: ${lcColor};">${lcText}</span>
+                        <select class="lc-dropdown" data-index="${i}" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
                             ${lcOptions}
                         </select>
                     </div>
-                    <button type="button" class="ui-icon-btn" title="유물 관리" onclick="window.openRelicModal(${i}, '${u.name}')">
+                    <button type="button" class="ui-icon-btn" style="border-color: ${relicBorder};" title="유물 관리" onclick="window.openRelicModal(${i}, '${u.name}')">
                         <img src="./imgs/site_ui/relic_icon.png" onerror="this.style.opacity='0.5'">
-                        <span class="lc-selected-name" id="relic-label-${i}">유물 설정</span>
+                        <span class="lc-selected-name" id="relic-label-${i}" style="color: ${relicColor};">${relicText}</span>
                     </button>
                 </div>
             </div>
-            <div style="display: flex; gap: 5px;">
-                <input type="number" class="spd-in" value="${u.spd}" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:4px; border-radius:4px; font-size:11px;">
-                <input type="number" class="max-e-in" value="${u.max_energy}" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:4px; border-radius:4px; font-size:11px;">
-            </div>
+            <button type="button" class="main-btn" style="width: 100%; margin: 4px 0 0 0; padding: 6px; font-size: 12px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, '${u.name}')">자세히 보기</button>
         </div>`;
 });
 
 document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
+    // 💡 1. [방금 추가한 부분] 페이지 로드 시 프리셋 광추 ID가 있다면 드롭다운의 초기값으로 강제 세팅!
+    const initIdx = parseInt(dropdown.getAttribute('data-index'));
+    if (state.selectedLightCones[initIdx]) {
+        dropdown.value = state.selectedLightCones[initIdx];
+    }
+
+    // 💡 2. [기존에 있던 부분] 사용자가 드롭다운 값을 직접 바꿀 때 색상을 바꿔주는 이벤트 리스너
     dropdown.addEventListener('change', (e) => {
         const idx = parseInt(e.target.getAttribute('data-index'));
         const id = e.target.value;
@@ -63,23 +84,19 @@ document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
         const parentBtn = dropdown.parentElement;
         
         if (id) {
-            // 1. 광추가 선택되었을 때: 글자색과 버튼 테두리 모두 산뜻한 초록색 활성화!
             label.textContent = "선택됨";
             label.style.color = "var(--success)";
             if (parentBtn) {
                 parentBtn.style.borderColor = "var(--success)";
             }
         } else {
-            // 2. 💡 [진짜 해결] 광추 미선택(해제) 시 원래의 이쁜 주황색 글씨로 정확하게 롤백!
             label.textContent = "광추 선택";
-            label.style.color = "var(--gold)"; // 글자색을 원래 주황색(var(--gold))으로 복구!
+            label.style.color = "var(--gold)"; 
             if (parentBtn) {
-                parentBtn.style.borderColor = "#475569"; // 테두리는 기본 회색 스타일 유지
+                parentBtn.style.borderColor = "#475569"; 
                 parentBtn.style.outline = "none";
             }
         }
-        
-        // 브라우저 강제 포커스로 인한 주황 테두리 현상 방지를 위해 blur 처리
         dropdown.blur();
     });
 });
@@ -94,16 +111,12 @@ window.openUltPanel = openUltPanel;
 window.confirmUltInsert = confirmUltInsert;
 
 function buildInitialTimeline() {
-    const spdIn = document.querySelectorAll('.spd-in');
-    const maxEIn = document.querySelectorAll('.max-e-in');
-    
     state.unitData = PRESET_UNITS.map((p, i) => {
         const assignedLcId = state.selectedLightCones[i];
         const assignedRelics = state.selectedRelics ? state.selectedRelics[i] : null;
         
         const u = new Unit({
             unit_id: p.unit_id,
-            spd: parseFloat(spdIn[i].value),
             kit: p.kit,
             lightcone: new LightCone(assignedLcId),
             relics: assignedRelics
@@ -335,7 +348,7 @@ function render() {
         const unit = state.unitData.find(u => u.unit_id === item.unitId);
         const actionConfig = (item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
         const isSelected = state.selectedIdx === idx;
-        const imagePath = `imgs/character_preview/${item.unitId}.png`;
+        const imagePath = `imgs/avatarshopicon/${item.unitId}.png`;
 
         // 상하단 정렬을 지탱해 줄 묶음형 래퍼 컨테이너 생성
         const wrapper = document.createElement('div');
@@ -674,8 +687,8 @@ function renderRelicModal() {
 setTimeout(() => {
     document.getElementById('add-main-stat-btn').addEventListener('click', () => {
         const val = document.getElementById('relic-main-select').value;
-        if (tempRelicData.main.length >= 4) {
-            alert("주옵션은 최대 4개까지만 설정할 수 있습니다.");
+        if (tempRelicData.main.length >= 6) {
+            alert("주옵션은 최대 6개까지만 설정할 수 있습니다.");
             return;
         }
         tempRelicData.main.push(val);
@@ -736,3 +749,87 @@ window.updateSubCount = (sIdx, delta) => {
 window.updateSubQuality = (sIdx, quality) => {
     tempRelicData.sub[sIdx].quality = quality;
 };
+
+// ================= [자세히 보기 쇼케이스 모달 전용 로직] =================
+window.openDetailModal = function(idx, charName) {
+    const unit = PRESET_UNITS[idx];
+    if (!unit) return;
+
+    const charId = unit.unit_id;
+    // 장착 중인 광추 ID가 있으면 사용, 없으면 캐릭터 기본 베이스 매핑 활용
+    const lcId = state.selectedLightCones[idx] || (unit.lightcone ? unit.lightcone.id : 23058);
+
+    // 1. 에셋 리소스 이미지 다이렉트 바인딩 규칙 적용
+    document.getElementById('detail-char-img').src = `./imgs/avatarshopicon/${charId}.png`;
+    document.getElementById('detail-lc-img').src = `./imgs/lightconemaxfigures/${lcId}.png`;
+    
+    // 속성(Element) 및 운명의길(Path) 더미 데이터 매핑 (UI 레이아웃 시각화용)
+    const elements = ["Wind", "Physical", "Harmony", "Thunder"];
+    const paths = ["Harmony", "Hunt", "Harmony", "Abundance"];
+    const curElement = elements[idx % elements.length];
+    const curPath = paths[idx % paths.length];
+
+    document.getElementById('detail-element-icon').src = `./imgs/iconattributemiddle/iconattribute${curElement}.png`;
+    document.getElementById('detail-path-icon').src = `./imgs/paths/${curPath}.png`;
+    document.getElementById('detail-char-name').textContent = charName;
+
+    // 2. 성급 스타 레이아웃 그리기 (StarBig.png 활용)
+    const starContainer = document.getElementById('detail-stars');
+    starContainer.innerHTML = '';
+    for(let s=0; s<5; s++) {
+        starContainer.innerHTML += `<img src="./imgs/decopic/StarBig.png" style="width:14px; height:14px; object-fit:contain;">`;
+    }
+
+    // 3. 광추 이름 매핑 추출
+    if (gameData && gameData.lightCones && gameData.lightCones[lcId]) {
+        document.getElementById('detail-lc-name').textContent = gameData.lightCones[lcId].name;
+    } else {
+        document.getElementById('detail-lc-name').textContent = "기본 장착 광추";
+    }
+
+    // 4. 9대 스탯 보드 정보 구성 (기본 수치 + 초록색 유물 가산치 분할 렌더링)
+    const statSpecs = [
+        { label: "최대 HP", icon: "IconMaxHP.png", base: 1241, add: 450 },
+        { label: "공격력", icon: "IconAttack.png", base: 642, add: 1120 },
+        { label: "방어력", icon: "IconDefence.png", base: 533, add: 120 },
+        { label: "속도", icon: "IconSpeed.png", base: 102, add: 34 },
+        { label: "치명타 확률", icon: "IconCriticalChance.png", base: "5.0%", add: "+64.2%" },
+        { label: "치명타 피해", icon: "IconCriticalDamage.png", base: "50.0%", add: "+148.5%" },
+        { label: "효과 명중", icon: "IconStatusProbability.png", base: "0.0%", add: "+24.0%" },
+        { label: "효과 저항", icon: "IconStatusResistance.png", base: "0.0%", add: "+10.0%" },
+        { label: "격특 효율", icon: "IconBreakup.png", base: "0.0%", add: "+48.0%" }
+    ];
+
+    const gridContainer = document.getElementById('detail-stats-grid');
+    gridContainer.innerHTML = '';
+    
+    statSpecs.forEach(s => {
+        gridContainer.innerHTML += `
+            <div style="background: #171e2f; border: 1px solid #222b3e; padding: 10px 14px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <img src="./imgs/staticon/${s.icon}" style="width: 18px; height: 18px; object-fit: contain;" onerror="this.style.opacity='0.4'">
+                    <span style="font-size: 13px; color: #94a3b8;">${s.label}</span>
+                </div>
+                <div style="font-size: 13px; font-weight: bold; font-family: monospace;">
+                    <span style="color: #ffffff;">${s.base}</span>
+                    <span style="color: var(--success); margin-left: 4px; font-size: 11px;">${s.add}</span>
+                </div>
+            </div>`;
+    });
+
+    document.getElementById('detail-modal').style.display = 'flex';
+};
+
+// 닫기 단방향 이벤트 바인딩
+setTimeout(() => {
+    const closeBtn = document.getElementById('close-detail-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            document.getElementById('detail-modal').style.display = 'none';
+        });
+    }
+}, 100);
+
+window.openDetailModal = window.openDetailModal;
+
+buildInitialTimeline()

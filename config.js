@@ -2,6 +2,9 @@ import subStatData from './data/relic_sub_affixes.json' with { type: 'json' };
 import mainStatData from './data/relic_main_affixes.json' with { type: 'json' };
 import gameData from './data/game_data.json' with { type: 'json' };
 
+import { getBaseLCId } from './lc.js'
+import { getBaseRelics, Relics } from './relic.js'
+
 export { subStatData, mainStatData, gameData };
 
 /**
@@ -26,7 +29,14 @@ export function getMainStatValue(StatName, level, rarity=5) {
         "SpeedDelta": 4,
         "PhysicalAddedRatio": 5,
         "BreakDamageAddedRatioBase": 6,
-        "SPRatioBase": 6
+        "SPRatioBase": 6,
+        "PhysicalAddedRatio": 5,
+        "FireAddedRatio": 5,
+        "IceAddedRatio": 5,
+        "ThunderAddedRatio": 5,
+        "WindAddedRatio": 5,
+        "QuantumAddedRatio": 5,
+        "ImaginaryAddedRatio": 5,
     }
         // 1. 이미지의 '56'번에 해당하는 데이터 객체 접근
     const statData = mainStatData[rarity * 10 + statMap[StatName]];
@@ -147,14 +157,14 @@ export class UnitKit {
 }
 
 export class Unit {
-    constructor({unit_id, name=undefined, spd, max_energy=undefined, kit, lightcone, relics = { main: [], sub: [] }}) {
+    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined}) {
         this.unit_id = unit_id;
         this.name = name ?? gameData.characters[this.unit_id].name
         this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
         this.element = gameData.characters[this.unit_id].element
         
-        this.lightcone = lightcone;
-        this.relics = relics;
+        this.lightcone = lightcone ?? new LightCone(getBaseLCId(this.unit_id));
+        this.relics = relics ?? getBaseRelics(this.unit_id)
 
         this.relicStats = {
             "HP": totalRelicStats(this.relics, "HPDelta"),
@@ -169,7 +179,14 @@ export class Unit {
             "EHR": totalRelicStats(this.relics, "StatusProbabilityBase"),
             "SPD": totalRelicStats(this.relics, "SpeedDelta"),
             "BE": totalRelicStats(this.relics, "BreakDamageAddedRatioBase"),
-            "EffectRES": totalRelicStats(this.relics, "StatusResistanceBase")
+            "EffectRES": totalRelicStats(this.relics, "StatusResistanceBase"),
+            "PhysicalDMGBoost": totalRelicStats(this.relics, "PhysicalAddedRatio"),
+            "FireDMGBoost": totalRelicStats(this.relics, "FireAddedRatio"),
+            "IceDMGBoost": totalRelicStats(this.relics, "IceAddedRatio"),
+            "ThunderDMGBoost": totalRelicStats(this.relics, "ThunderAddedRatio"),
+            "WindDMGBoost": totalRelicStats(this.relics, "WindAddedRatio"),
+            "QuantumDMGBoost": totalRelicStats(this.relics, "QuantumAddedRatio"),
+            "ImaginaryDMGBoost": totalRelicStats(this.relics, "ImaginaryAddedRatio"),
         }
 
         this.base_spd = gameData.characters[this.unit_id].stats.SPD

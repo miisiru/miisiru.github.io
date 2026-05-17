@@ -33,10 +33,10 @@ const huokit = new UnitKit(
     new ActionConfig({ name: "궁", energy_gain: 5, action_type: ActionType.ULT })
 );
 
-const Evanescia = new Unit({unit_id: 1505, spd: 135, kit: evakit, lightcone: new LightCone(getBaseLCId(1505))})
-const Sunday = new Unit({unit_id: 1313, spd: 134, kit: sundaykit, lightcone: new LightCone(getBaseLCId(1313))})
-const Robin = new Unit({unit_id: 1309, spd: 134, kit: robinkit, lightcone: new LightCone(getBaseLCId(1309))})
-const Huohuo = new Unit({unit_id: 1217, spd: 134, kit: huokit, lightcone: new LightCone(getBaseLCId(1217))})
+const Evanescia = new Unit({unit_id: 1505, spd: 135, kit: evakit})
+const Sunday = new Unit({unit_id: 1313, spd: 134, kit: sundaykit})
+const Robin = new Unit({unit_id: 1309, spd: 134, kit: robinkit})
+const Huohuo = new Unit({unit_id: 1217, spd: 134, kit: huokit})
 
 export const availiableCharacters = [Evanescia, Sunday, Robin, Huohuo]
 
