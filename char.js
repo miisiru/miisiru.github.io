@@ -38,7 +38,7 @@ const Sunday = new Unit({unit_id: 1313, spd: 134, kit: sundaykit})
 const Robin = new Unit({unit_id: 1309, spd: 134, kit: robinkit})
 const Huohuo = new Unit({unit_id: 1217, spd: 134, kit: huokit})
 
-export const availiableCharacters = [Evanescia, Sunday, Robin, Huohuo]
+export const availableCharacters = {1505: Evanescia, 1313: Sunday, 1309: Robin, 1217: Huohuo}
 
 export const PRESET_UNITS = [
     Evanescia,

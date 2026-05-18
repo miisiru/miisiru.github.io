@@ -136,15 +136,17 @@ export class ActionConfig {
 }
 
 export class LightCone {
-    constructor(id, superimposition=undefined) {
+    constructor(id, superimposition=undefined, level=80) {
         this.id = id
         this.name = gameData.lightCones[id].name
         this.rarity = gameData.lightCones[id].rarity
         this.base_hp = gameData.lightCones[id].stats.HP
         this.base_atk = gameData.lightCones[id].stats.ATK
         this.base_def = gameData.lightCones[id].stats.DEF
+        this.path = gameData.lightCones[id].path
         this.superimpostion = superimposition ?? (this.rarity === 5 ? 1 : 5);
         this.superimposition_values = gameData.lightCones[id].superimpositions
+        this.level = level
     }
 }
 
@@ -162,6 +164,8 @@ export class Unit {
         this.name = name ?? gameData.characters[this.unit_id].name
         this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
         this.element = gameData.characters[this.unit_id].element
+        this.rarity = gameData.characters[this.unit_id].rarity
+        this.path = gameData.characters[this.unit_id].path
         
         this.lightcone = lightcone ?? new LightCone(getBaseLCId(this.unit_id));
         this.relics = relics ?? getBaseRelics(this.unit_id)
@@ -180,6 +184,7 @@ export class Unit {
             "SPD": totalRelicStats(this.relics, "SpeedDelta"),
             "BE": totalRelicStats(this.relics, "BreakDamageAddedRatioBase"),
             "EffectRES": totalRelicStats(this.relics, "StatusResistanceBase"),
+            "ERR": totalRelicStats(this.relics, "SPRatioBase"),
             "PhysicalDMGBoost": totalRelicStats(this.relics, "PhysicalAddedRatio"),
             "FireDMGBoost": totalRelicStats(this.relics, "FireAddedRatio"),
             "IceDMGBoost": totalRelicStats(this.relics, "IceAddedRatio"),
@@ -189,10 +194,26 @@ export class Unit {
             "ImaginaryDMGBoost": totalRelicStats(this.relics, "ImaginaryAddedRatio"),
         }
 
-        this.base_spd = gameData.characters[this.unit_id].stats.SPD
         this.base_hp = gameData.characters[this.unit_id].stats.HP + gameData.lightCones[this.lightcone.id].stats.HP
         this.base_atk = gameData.characters[this.unit_id].stats.ATK + gameData.lightCones[this.lightcone.id].stats.ATK
         this.base_def = gameData.characters[this.unit_id].stats.DEF + gameData.lightCones[this.lightcone.id].stats.DEF
+        this.base_spd = gameData.characters[this.unit_id].stats.SPD
+        this.base_cr = 0.05 + (gameData.characters[this.unit_id].traces["CRIT Rate"] ?? 0)
+        this.base_cd = 0.5 + (gameData.characters[this.unit_id].traces["CRIT DMG"] ?? 0)
+        this.base_ehr = 0 + (gameData.characters[this.unit_id].traces["Effect Hit Rate"] ?? 0)
+        this.base_eres = 0 + (gameData.characters[this.unit_id].traces["Effect RES"] ?? 0)
+        this.base_be = 0 + (gameData.characters[this.unit_id].traces["Break Effect"] ?? 0)
+        this.base_err = 1
+        this.base_elation = 0 + (gameData.characters[this.unit_id].traces["Elation"] ?? 0)
+        this.base_dmg_boost = {
+            "Physical": 0 + (gameData.characters[this.unit_id].traces["Physical DMG Boost"] ?? 0),
+            "Ice": 0 + (gameData.characters[this.unit_id].traces["Ice"] ?? 0),
+            "Imaginary": 0 + (gameData.characters[this.unit_id].traces["Imaginary"] ?? 0),
+            "Lightning": 0 + (gameData.characters[this.unit_id].traces["Lightning DMG Boost"] ?? 0),
+            "Quantum": 0 + (gameData.characters[this.unit_id].traces["Quantum DMG Boost"] ?? 0),
+            "Wind": 0 + (gameData.characters[this.unit_id].traces["Wind DMG Boost"] ?? 0),
+            "Fire": 0 + (gameData.characters[this.unit_id].traces["Fire DMG Boost"] ?? 0)
+        }
 
         this.spd = this.base_spd + this.relicStats.SPD
 

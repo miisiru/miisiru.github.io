@@ -2,9 +2,10 @@
  * script.js - 선데이 행게증 100% 로직 보완 및 엔진 통합
  */
 import { Unit, fetchStarRailData, LightCone } from './config.js';
-import { PRESET_UNITS } from './char.js';
+import { PRESET_UNITS, availableCharacters } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
 
+window.PRESET_UNITS = PRESET_UNITS;
 
 let state = { 
     unitData: [],      
@@ -27,6 +28,19 @@ lightCones.forEach(lc => {
     lcOptions += `<option value="${lc.id}">${lc.name}</option>`;
 });
 
+// 1. 전역 availableCharacters 또는 PRESET_UNITS 기반으로 캐릭터 선택창 옵션 빌드
+let charOptions = ``;
+if (typeof availableCharacters !== 'undefined' && availableCharacters) {
+    Object.keys(availableCharacters).forEach(id => {
+        charOptions += `<option value="${id}">${availableCharacters[id].name || id}</option>`;
+    });
+} else {
+    // 가드 레레일: 아직 availableCharacters 정의 전일 경우 현재 라인업으로 옵션 제공
+    PRESET_UNITS.forEach(u => {
+        charOptions += `<option value="${u.unit_id}">${u.name}</option>`;
+    });
+}
+
 PRESET_UNITS.forEach((u, i) => {
     // 💡 [추가] 초기 로드 시점의 광추 및 유물 데이터 유무 검사
     const initLcId = state.selectedLightCones[i];
@@ -41,30 +55,113 @@ PRESET_UNITS.forEach((u, i) => {
     const lcBorder = hasLc ? "var(--success)" : "#475569";
 
     // 유물 UI 스타일 매핑
-    const relicText = hasRelic ? "설정됨" : "유물 선택";
+    const relicText = hasRelic ? "설정됨" : "유물 설정";
     const relicColor = hasRelic ? "var(--success)" : "var(--gold)";
     const relicBorder = hasRelic ? "var(--success)" : "#475569";
 
     spdDiv.innerHTML += `
-        <div class="char-setting-card">
-            <div class="char-card-header">
-                <span class="char-card-title">${u.name}</span>
-                <div class="card-icon-group">
-                    <div class="ui-icon-btn" style="border-color: ${lcBorder}; position: relative;">
-                        <img src="./imgs/site_ui/lc_icon.png" onerror="this.style.opacity='0.5'">
-                        <span class="lc-selected-name" id="lc-label-${i}" style="color: ${lcColor};">${lcText}</span>
+        <div class="char-setting-card" style="padding: 8px 10px; background: var(--card); border: 1px solid #2d3748; border-radius: 6px; box-sizing: border-box; width: 100%;">
+            <div class="char-card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; width: 100%;">
+                
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-start; flex-shrink: 0;">
+                    <img id="char-avatar-${i}" src="./imgs/avatarroundicon/${u.unit_id}.png" style="width: 32px; height: 32px; border-radius: 50%; border: 1px solid #475569; object-fit: contain; flex-shrink: 0;" onerror="this.style.opacity='0.5'">
+                    
+                    <div class="ui-icon-btn" style="border-color: #475569; position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid #475569; background: #1e293b;">
+                        <img src="./imgs/site_ui/char_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
+                        <span style="font-size: 11px; color: var(--text); white-space: nowrap;">변경</span>
+                        <select class="char-dropdown" data-index="${i}" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                            ${charOptions}
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; flex: 1;">
+                    <div class="ui-icon-btn" style="border-color: ${lcBorder}; position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid ${lcBorder}; background: transparent;">
+                        <img src="./imgs/site_ui/lc_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
+                        <span class="lc-selected-name" id="lc-label-${i}" style="color: ${lcColor}; font-size: 11px; white-space: nowrap;">${lcText}</span>
                         <select class="lc-dropdown" data-index="${i}" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
                             ${lcOptions}
                         </select>
                     </div>
-                    <button type="button" class="ui-icon-btn" style="border-color: ${relicBorder};" title="유물 관리" onclick="window.openRelicModal(${i}, '${u.name}')">
-                        <img src="./imgs/site_ui/relic_icon.png" onerror="this.style.opacity='0.5'">
-                        <span class="lc-selected-name" id="relic-label-${i}" style="color: ${relicColor};">${relicText}</span>
+
+                    <button type="button" class="ui-icon-btn" style="border-color: ${relicBorder}; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid ${relicBorder}; background: transparent; cursor: pointer;" title="유물 관리" onclick="window.openRelicModal(${i}, window.PRESET_UNITS[${i}].name)">
+                        <img src="./imgs/site_ui/relic_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
+                        <span class="lc-selected-name" id="relic-label-${i}" style="color: ${relicColor}; font-size: 11px; white-space: nowrap;">${relicText}</span>
                     </button>
                 </div>
+                
             </div>
-            <button type="button" class="main-btn" style="width: 100%; margin: 4px 0 0 0; padding: 6px; font-size: 12px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, '${u.name}')">자세히 보기</button>
+            <button type="button" class="main-btn" style="width: 100%; margin: 0; padding: 5px; font-size: 11px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, window.PRESET_UNITS[${i}].name)">자세히 보기</button>
         </div>`;
+});
+
+document.querySelectorAll('.char-dropdown').forEach(dropdown => {
+    const idx = parseInt(dropdown.getAttribute('data-index'));
+    
+    // 현재 세팅된 프리셋 캐릭터의 unit_id를 select의 기본값으로 동기화
+    if (PRESET_UNITS[idx]) {
+        dropdown.value = PRESET_UNITS[idx].unit_id;
+    }
+
+    dropdown.addEventListener('change', (e) => {
+        const slotIdx = parseInt(e.target.getAttribute('data-index'));
+        const nextCharId = e.target.value;
+
+        if (typeof availableCharacters !== 'undefined' && availableCharacters[nextCharId]) {
+            const newUnit = availableCharacters[nextCharId];
+            
+            // 🎯 1. 캐릭터 본체 데이터 덮어쓰기
+            window.PRESET_UNITS[slotIdx] = newUnit;
+
+            // 🎯 2. 광추 연동 업데이트 (데이터 교체 + UI 초록색 점등)
+            const newLcId = newUnit.lightcone ? newUnit.lightcone.id : "";
+            state.selectedLightCones[slotIdx] = newLcId || null;
+            
+            const lcLabel = document.getElementById(`lc-label-${slotIdx}`);
+            const lcDropdown = document.querySelector(`.lc-dropdown[data-index="${slotIdx}"]`);
+            const lcBtn = lcLabel ? lcLabel.parentElement : null;
+            
+            if (lcDropdown) lcDropdown.value = newLcId; // 드롭다운 내부 값 동기화
+            if (newLcId) {
+                if(lcLabel) { lcLabel.textContent = "선택됨"; lcLabel.style.color = "var(--success)"; }
+                if(lcBtn) lcBtn.style.borderColor = "var(--success)";
+            } else {
+                if(lcLabel) { lcLabel.textContent = "광추 선택"; lcLabel.style.color = "var(--gold)"; }
+                if(lcBtn) lcBtn.style.borderColor = "#475569";
+            }
+
+            // 🎯 3. 유물 연동 업데이트 (원본이 오염되지 않게 깊은 복사 처리)
+            const newRelics = newUnit.relics ? JSON.parse(JSON.stringify(newUnit.relics)) : { main: [], sub: [] };
+            state.selectedRelics[slotIdx] = newRelics;
+            
+            const hasRelic = newRelics && ((newRelics.main && newRelics.main.length > 0) || (newRelics.sub && newRelics.sub.length > 0));
+            const relicLabel = document.getElementById(`relic-label-${slotIdx}`);
+            const relicBtn = relicLabel ? relicLabel.parentElement : null;
+            
+            if (hasRelic) {
+                if(relicLabel) { relicLabel.textContent = "설정됨"; relicLabel.style.color = "var(--success)"; }
+                if(relicBtn) relicBtn.style.borderColor = "var(--success)";
+            } else {
+                if(relicLabel) { relicLabel.textContent = "유물 선택"; relicLabel.style.color = "var(--gold)"; }
+                if(relicBtn) relicBtn.style.borderColor = "#475569";
+            }
+
+        } else {
+            console.warn(`[캐릭터 엔진 가드] availableCharacters 변수 내에 ID ${nextCharId} 데이터가 매핑되어 있지 않습니다.`);
+        }
+
+        // 🎯 4. UI 아바타 소스 즉각 새로고침 스위칭
+        const avatarImg = document.getElementById(`char-avatar-${slotIdx}`);
+        if (avatarImg) {
+            avatarImg.src = `./imgs/avatarroundicon/${nextCharId}.png`;
+        }
+
+        // 잔여 트리거 갱신을 위해 시뮬레이션 타임라인 강제 계산
+        if (typeof resetSimulation === 'function') {
+            resetSimulation();
+        }
+        dropdown.blur();
+    });
 });
 
 document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
@@ -90,7 +187,7 @@ document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
                 parentBtn.style.borderColor = "var(--success)";
             }
         } else {
-            label.textContent = "광추 선택";
+            label.textContent = "선택";
             label.style.color = "var(--gold)"; 
             if (parentBtn) {
                 parentBtn.style.borderColor = "#475569"; 
@@ -764,19 +861,21 @@ window.openDetailModal = function(idx, charName) {
     document.getElementById('detail-lc-img').src = `./imgs/lightconemaxfigures/${lcId}.png`;
     
     // 속성(Element) 및 운명의길(Path) 더미 데이터 매핑 (UI 레이아웃 시각화용)
-    const elements = ["Wind", "Physical", "Harmony", "Thunder"];
-    const paths = ["Harmony", "Hunt", "Harmony", "Abundance"];
-    const curElement = elements[idx % elements.length];
-    const curPath = paths[idx % paths.length];
+    const curElement = unit.element;
+    const curLCPath = unit.lightcone.path
+    const curPath = unit.path;
+    const romes = ["", "I", "II", "III", "IV", "V"];
 
     document.getElementById('detail-element-icon').src = `./imgs/iconattributemiddle/iconattribute${curElement}.png`;
     document.getElementById('detail-path-icon').src = `./imgs/paths/${curPath}.png`;
+    document.getElementById('detail-lc-path-icon').src = `./imgs/paths/${curLCPath}.png`;
     document.getElementById('detail-char-name').textContent = charName;
+    document.getElementById('detail-lc-superimposition').textContent = `중첩 ${romes[unit.lightcone.superimpostion]}`
 
     // 2. 성급 스타 레이아웃 그리기 (StarBig.png 활용)
     const starContainer = document.getElementById('detail-stars');
     starContainer.innerHTML = '';
-    for(let s=0; s<5; s++) {
+    for(let s=0; s<unit.rarity; s++) {
         starContainer.innerHTML += `<img src="./imgs/decopic/StarBig.png" style="width:14px; height:14px; object-fit:contain;">`;
     }
 
@@ -789,47 +888,127 @@ window.openDetailModal = function(idx, charName) {
 
     // 4. 9대 스탯 보드 정보 구성 (기본 수치 + 초록색 유물 가산치 분할 렌더링)
     const statSpecs = [
-        { label: "최대 HP", icon: "IconMaxHP.png", base: 1241, add: 450 },
-        { label: "공격력", icon: "IconAttack.png", base: 642, add: 1120 },
-        { label: "방어력", icon: "IconDefence.png", base: 533, add: 120 },
-        { label: "속도", icon: "IconSpeed.png", base: 102, add: 34 },
-        { label: "치명타 확률", icon: "IconCriticalChance.png", base: "5.0%", add: "+64.2%" },
-        { label: "치명타 피해", icon: "IconCriticalDamage.png", base: "50.0%", add: "+148.5%" },
-        { label: "효과 명중", icon: "IconStatusProbability.png", base: "0.0%", add: "+24.0%" },
-        { label: "효과 저항", icon: "IconStatusResistance.png", base: "0.0%", add: "+10.0%" },
-        { label: "격특 효율", icon: "IconBreakup.png", base: "0.0%", add: "+48.0%" }
+        { label: "HP", icon: "IconMaxHP.png", base: unit.base_hp, add: 450, isPercent: false },
+        { label: "공격력", icon: "IconAttack.png", base: unit.base_atk, add: 1120, isPercent: false },
+        { label: "방어력", icon: "IconDefence.png", base: unit.base_def, add: 120, isPercent: false },
+        { label: "속도", icon: "IconSpeed.png", base: unit.base_spd, add: 34, isPercent: false },
+        { label: "치명타 확률", icon: "IconCriticalChance.png", base: unit.base_cr, add: 0.642, isPercent: true },
+        { label: "치명타 피해", icon: "IconCriticalDamage.png", base: unit.base_cd, add: 1.485, isPercent: true },
+        { label: "효과 명중", icon: "IconStatusProbability.png", base: unit.base_ehr, add: 0.240, isPercent: true },
+        { label: "효과 저항", icon: "IconStatusResistance.png", base: unit.base_eres, add: 0.100, isPercent: true },
+        { label: "격파 특수효과", icon: "IconBreakup.png", base: unit.base_be, add: 0.480, isPercent: true },
+        { label: "에너지 회복 효율", icon: "IconEnergyRecovery.png", base: unit.base_err, add: 0.480, isPercent: true },
+        { label: `${curElement} 피해 증가`, icon: `Icon${curElement}AddedRatio.png`, base: unit.base_dmg_boost[curElement], add: 0.0, isPercent: true }
     ];
+
+    if(unit.path === "Elation") {
+        statSpecs.push({label: "환락도", icon: "IconJoy.png", base: unit.base_elation, add: 0, isPercent: true})
+    }
 
     const gridContainer = document.getElementById('detail-stats-grid');
     gridContainer.innerHTML = '';
     
-    statSpecs.forEach(s => {
+    statSpecs.forEach((s, sIdx) => {
+        // 데이터 가공 수치 미리 계산
+        let baseStr = "";
+        let addStr = "";
+        let totalStr = "";
+
+        if (s.isPercent) {
+            baseStr = (s.base * 100).toFixed(1) + "%";
+            addStr = s.add > 0 ? "+" + (s.add * 100).toFixed(1) + "%" : "";
+            totalStr = ((s.base + s.add) * 100).toFixed(1) + "%";
+        } else {
+            baseStr = Math.floor(s.base).toLocaleString();
+            addStr = s.add > 0 ? "+" + Math.floor(s.add).toLocaleString() : "";
+            totalStr = Math.floor(s.base + s.add).toLocaleString();
+        }
+
+        // HTML 동적 주입 (기본 상태는 합쳐진 하얀색 수치 노출)
+        // 클릭 이벤트를 심어서 내부 수치를 실시간 스위칭합니다.
         gridContainer.innerHTML += `
-            <div style="background: #171e2f; border: 1px solid #222b3e; padding: 10px 14px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="detail-stat-box" 
+                 data-mode="total" 
+                 style="background: #171e2f; border: 1px solid #222b3e; padding: 10px 14px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; user-select: none;"
+                 onclick="window.toggleStatDisplay(this, '${totalStr}', '${baseStr}', '${addStr}')">
+                
+                <div style="display: flex; align-items: center; gap: 8px; white-space: nowrap; flex-shrink: 0;">
                     <img src="./imgs/staticon/${s.icon}" style="width: 18px; height: 18px; object-fit: contain;" onerror="this.style.opacity='0.4'">
                     <span style="font-size: 13px; color: #94a3b8;">${s.label}</span>
                 </div>
-                <div style="font-size: 13px; font-weight: bold; font-family: monospace;">
-                    <span style="color: #ffffff;">${s.base}</span>
-                    <span style="color: var(--success); margin-left: 4px; font-size: 11px;">${s.add}</span>
+                
+                <div class="stat-value-container" style="white-space: nowrap; font-size: 13px; font-weight: bold; font-family: monospace; text-align: right;">
+                    <span style="color: #ffffff;">${totalStr}</span>
                 </div>
             </div>`;
     });
 
+    const modalContentBox = document.querySelector('#detail-modal > div'); 
+    if (modalContentBox) {
+        modalContentBox.scrollTop = 0;
+    }
+
     document.getElementById('detail-modal').style.display = 'flex';
 };
 
+window.toggleStatDisplay = function(element, totalStr, baseStr, addStr) {
+    const valueContainer = element.querySelector('.stat-value-container');
+    const currentMode = element.getAttribute('data-mode');
+
+    if (currentMode === 'total') {
+        // ➔ 분리 모드로 전환 (기본스탯 화이트 + 추가스탯 그린)
+        element.setAttribute('data-mode', 'split');
+        valueContainer.innerHTML = `
+            <span style="color: #ffffff;">${baseStr}</span>
+            ${addStr ? `<span style="color: var(--success); margin-left: 6px; font-size: 11px;">${addStr}</span>` : ''}
+        `;
+    } else {
+        // ➔ 통합 모드로 복구 (합산 화이트 단일 노출)
+        element.setAttribute('data-mode', 'total');
+        valueContainer.innerHTML = `
+            <span style="color: #ffffff;">${totalStr}</span>
+        `;
+    }
+};
+
 // 닫기 단방향 이벤트 바인딩
+// ================= [모달 닫기 이벤트 고도화] =================
 setTimeout(() => {
-    const closeBtn = document.getElementById('close-detail-btn');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            document.getElementById('detail-modal').style.display = 'none';
+    const detailModal = document.getElementById('detail-modal');
+    const closeBtnBottom = document.getElementById('close-detail-btn'); // 기존 하단 버튼
+    const closeBtnTop = document.getElementById('close-detail-btn-top'); // 신규 상단 X 버튼
+    
+    const closeModal = () => {
+        if (detailModal) detailModal.style.display = 'none';
+    };
+
+    // 버튼 클릭 시 닫기
+    if (closeBtnBottom) closeBtnBottom.addEventListener('click', closeModal);
+    if (closeBtnTop) closeBtnTop.addEventListener('click', closeModal);
+
+    // 💡 핵심: 모달 바깥쪽(어두운 배경) 클릭 시 닫기
+    if (detailModal) {
+        detailModal.addEventListener('click', (e) => {
+            // 클릭한 요소(e.target)가 모달 내부 컨텐츠가 아니라, 모달을 감싸는 겉 배경일 때만 동작
+            if (e.target === detailModal) {
+                closeModal();
+            }
         });
     }
 }, 100);
 
 window.openDetailModal = window.openDetailModal;
+
+setTimeout(() => {
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    const settingsPanel = document.getElementById('settings-panel');
+    
+    if (toggleBtn && settingsPanel) {
+        toggleBtn.addEventListener('click', () => {
+            // collapsed 클래스를 넣었다 뺐다 하며 패널을 접고 폅니다.
+            settingsPanel.classList.toggle('collapsed');
+        });
+    }
+}, 100);
 
 buildInitialTimeline()
