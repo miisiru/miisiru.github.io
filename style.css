@@ -577,3 +577,47 @@ aside.collapsed > *:not(:first-child) {
 #detail-modal-scroll::-webkit-scrollbar-track {
     background: transparent; /* 배경은 투명하게 처리해서 깔끔함 유지 */
 }
+
+#relic-modal-scroll::-webkit-scrollbar {
+    width: 7px; /* Settings와 동일하게 얇은 4px 두께 유지 */
+}
+
+#relic-modal-scroll::-webkit-scrollbar-thumb {
+    background: #2d3748; /* Settings와 똑같은 차분한 다크 그레이 색상 */
+    border-radius: 4px;
+}
+
+#relic-modal-scroll::-webkit-scrollbar-track {
+    background: transparent; /* 배경은 투명하게 처리해서 깔끔함 유지 */
+}
+
+/* ================= [유물 세트 커스텀 드롭다운 전용 UI] ================= */
+.custom-option {
+    transition: background 0.1s;
+}
+.custom-option:hover {
+    background: #26324d !important; /* 마우스 올렸을 때 살짝 밝아지는 효과 */
+}
+
+/* 드롭다운 스크롤바 얇고 예쁘게 */
+.custom-select-options::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-select-options::-webkit-scrollbar-thumb {
+    background: #3b4f76;
+    border-radius: 3px;
+}
+
+/* 유물 설정 모달 내부의 그리드 아이템 크기 제한 보완 */
+#relic-set-container {
+    box-sizing: border-box;
+}
+
+#relic-set-container div {
+    min-width: 0; /* grid나 flex 내부에서 자식 요소가 부모 폭을 터뜨리는 현상 방지 */
+}
+
+/* 커스텀 드롭다운 옵션 박스가 아래 서브 옵션 목록보다 무조건 위에 뜨도록 z-index 확인 */
+.custom-select-options {
+    z-index: 999 !important;
+}

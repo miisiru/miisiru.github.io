@@ -64,7 +64,12 @@ const base = {
             "count": 2,
             "quality": "mid"
         }
-    ]
+    ],
+    "sets": {
+        "outer2": 101,
+        "outer4": 101,
+        "planar2": 301
+    }
 }
 
 export class Relics {
@@ -100,12 +105,34 @@ export class Relics {
         });
         return this
     }
+
+    changeSets(outer2, outer4, planar2) {
+        this.stats.sets.outer2 = outer2 !== 0 ? outer2 : this.stats.sets.outer2;
+        this.stats.sets.outer4 = outer4 !== 0 ? outer4 : this.stats.sets.outer4;
+        this.stats.sets.planar2 = planar2 !== 0 ? planar2 : this.stats.sets.planar2;
+        return this;
+    }
+
+    changeSet1(outer2) {
+        this.stats.sets.outer2 = outer2
+        return this
+    }
+
+    changeSet2(outer4) {
+        this.stats.sets.outer4 = outer4
+        return this
+    }
+
+    changePlanar(planar2) {
+        this.stats.sets.planar2 = planar2
+        return this
+    }
 }
 
-const Evanescia = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "PhysicalAddedRatio", "SPRatioBase").addSubStats(["CriticalChanceBase", 11, "mid"], ["CriticalDamageBase", 13, "mid"]).stats
-const Sunday = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["SpeedDelta", 1, "mid"], ["CriticalDamagteBase", 15, "mid"]).stats
-const Robin = new Relics().addMainStats("AttackAddedRatio","AttackAddedRatio","AttackAddedRatio","SPRatioBase").addSubStats(["AttackDelta", 9, "mid"], ["AttackAddedRatio", 15, "mid"]).stats
-const Huohuo = new Relics().addMainStats("HealRatioBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["HPAddedRatio", 15, "mid"], ["SpeedDelta", 15, "mid"]).stats
+const Evanescia = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "PhysicalAddedRatio", "SPRatioBase").addSubStats(["CriticalChanceBase", 11, "mid"], ["CriticalDamageBase", 13, "mid"]).changeSets(129, 129, 325).stats
+const Sunday = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["SpeedDelta", 1, "mid"], ["CriticalDamagteBase", 15, "mid"]).changeSets(121, 121, 317).stats
+const Robin = new Relics().addMainStats("AttackAddedRatio","AttackAddedRatio","AttackAddedRatio","SPRatioBase").addSubStats(["AttackDelta", 9, "mid"], ["AttackAddedRatio", 15, "mid"]).changeSets(123, 116, 317).stats
+const Huohuo = new Relics().addMainStats("HealRatioBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["HPAddedRatio", 15, "mid"], ["SpeedDelta", 15, "mid"]).changeSets(125, 125, 317).stats
 
 export function getBaseRelics(id) {
     const idMap = {
