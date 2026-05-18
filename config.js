@@ -2,7 +2,7 @@ import subStatData from './data/relic_sub_affixes.json' with { type: 'json' };
 import mainStatData from './data/relic_main_affixes.json' with { type: 'json' };
 import gameData from './data/game_data.json' with { type: 'json' };
 
-import { getBaseLCId } from './lc.js'
+import { getBaseLCId, getLCStats } from './lc.js'
 import { getBaseRelics, Relics } from './relic.js'
 
 export { subStatData, mainStatData, gameData };
@@ -18,7 +18,7 @@ export const Ability = { ActionGuageModification: 'AG' };
 export function getMainStatValue(StatName, level, rarity=5) {
     const statMap = {
         "HPDelta": 1,
-        "ATKDelta": 2,
+        "AttackDelta": 2,
         "HPAddedRatio": 3,
         "AttackAddedRatio": 3,
         "DefenceAddedRatio": 3,
@@ -86,10 +86,8 @@ export function totalRelicStats(relics, statName) {
         relics.main.forEach(mainStat => {
             // 인수로 요청받은 statName과 일치할 때만 계산
             if (mainStat === statName) {
-                const statValue = getMainStatValue(mainStat, 15, 5);
-                if (statValue > 0) {
-                    totals += statValue;
-                }
+                const statValue = getMainStatValue(mainStat, 15);
+                totals += statValue;
             }
         });
     }
@@ -106,6 +104,47 @@ export function totalRelicStats(relics, statName) {
                 const singleValue = getSubStatValue(subItem.name, quality, 5);
                 
                 totals += singleValue * rollCount;
+            }
+        });
+    }
+
+    if (relics.sets) {
+        const setTypes = ['outer2', 'outer4', 'planar2'];
+        
+        // 💡 1. 유물 2세트와 4세트 드롭다운이 다르게 설정되어 있는지 체크
+        const isMixedSet = relics.sets.outer2 !== relics.sets.outer4;
+
+        // 💡 2. 섞어 입었다면 outer4도 4세트 효과(1)가 아니라 해당 유물의 2세트 효과(0)를 바라봅니다.
+        const valueIndexMap = {
+            outer2: 0,
+            outer4: isMixedSet ? 0 : 1,
+            planar2: 0
+        };
+
+        setTypes.forEach(type => {
+            // 🎯 [요청사항 반영] 섞어 입은 상태에서 현재 순회 중인 타입이 'outer4'라면, 
+            // ID 자체도 outer4 드롭다운 값이 아닌 outer2 드롭다운 값을 사용해 데이터를 가져옵니다.
+            const targetTypeKey = (type === 'outer4' && isMixedSet) ? 'outer2' : type;
+            const setId = String(relics.sets[targetTypeKey]);
+            
+            if (setId && setId !== '0' && setId !== 'undefined' && setId !== 'null' && setId !== '') {
+                // gameData.relics가 배열일 때와 객체 사전 형태일 때를 모두 지원하는 안전장치
+                const setData = Array.isArray(gameData.relics) 
+                    ? gameData.relics.find(r => String(r.id) === setId)
+                    : gameData.relics[setId];
+                
+                if (setData) {
+                    const targetIndex = valueIndexMap[type];
+                    
+                    // 💡 3. 유물 속성명 대조 규칙 바인딩
+                    // 섞어 입었을 때는 둘 다 2세트 효과 상태이므로 setData.outer2와 스탯명을 대조합니다.
+                    const checkProperty = (type === 'outer4' && isMixedSet) ? 'outer2' : type;
+
+                    if (setData[checkProperty] === statName) {
+                        const setVal = setData.values?.[targetIndex] ?? 0;
+                        totals += setVal;
+                    }
+                }
             }
         });
     }
@@ -144,7 +183,7 @@ export class LightCone {
         this.base_atk = gameData.lightCones[id].stats.ATK
         this.base_def = gameData.lightCones[id].stats.DEF
         this.path = gameData.lightCones[id].path
-        this.superimpostion = superimposition ?? (this.rarity === 5 ? 1 : 5);
+        this.superimposition = superimposition ?? (this.rarity === 5 ? 1 : 5);
         this.superimposition_values = gameData.lightCones[id].superimpositions
         this.level = level
     }
@@ -179,7 +218,7 @@ export class Unit {
             "DEF%": totalRelicStats(this.relics, "DefenceAddedRatio"),
             "CR": totalRelicStats(this.relics, "CriticalChanceBase"),
             "CD": totalRelicStats(this.relics, "CriticalDamageBase"),
-            "OutgoingHealingBoost": totalRelicStats(this.relics, "HealRatioBase"),
+            "HealRatio": totalRelicStats(this.relics, "HealRatioBase"),
             "EHR": totalRelicStats(this.relics, "StatusProbabilityBase"),
             "SPD": totalRelicStats(this.relics, "SpeedDelta"),
             "BE": totalRelicStats(this.relics, "BreakDamageAddedRatioBase"),
@@ -192,38 +231,87 @@ export class Unit {
             "WindDMGBoost": totalRelicStats(this.relics, "WindAddedRatio"),
             "QuantumDMGBoost": totalRelicStats(this.relics, "QuantumAddedRatio"),
             "ImaginaryDMGBoost": totalRelicStats(this.relics, "ImaginaryAddedRatio"),
+            "Elation%": totalRelicStats(this.relics, "Elation%"),
+            "SPD%": totalRelicStats(this.relics, "SPD%")
         }
 
-        this.base_hp = gameData.characters[this.unit_id].stats.HP + gameData.lightCones[this.lightcone.id].stats.HP
-        this.base_atk = gameData.characters[this.unit_id].stats.ATK + gameData.lightCones[this.lightcone.id].stats.ATK
-        this.base_def = gameData.characters[this.unit_id].stats.DEF + gameData.lightCones[this.lightcone.id].stats.DEF
-        this.base_spd = gameData.characters[this.unit_id].stats.SPD
-        this.base_cr = 0.05 + (gameData.characters[this.unit_id].traces["CRIT Rate"] ?? 0)
-        this.base_cd = 0.5 + (gameData.characters[this.unit_id].traces["CRIT DMG"] ?? 0)
-        this.base_ehr = 0 + (gameData.characters[this.unit_id].traces["Effect Hit Rate"] ?? 0)
-        this.base_eres = 0 + (gameData.characters[this.unit_id].traces["Effect RES"] ?? 0)
-        this.base_be = 0 + (gameData.characters[this.unit_id].traces["Break Effect"] ?? 0)
-        this.base_err = 1
-        this.base_elation = 0 + (gameData.characters[this.unit_id].traces["Elation"] ?? 0)
-        this.base_dmg_boost = {
-            "Physical": 0 + (gameData.characters[this.unit_id].traces["Physical DMG Boost"] ?? 0),
-            "Ice": 0 + (gameData.characters[this.unit_id].traces["Ice"] ?? 0),
-            "Imaginary": 0 + (gameData.characters[this.unit_id].traces["Imaginary"] ?? 0),
-            "Lightning": 0 + (gameData.characters[this.unit_id].traces["Lightning DMG Boost"] ?? 0),
-            "Quantum": 0 + (gameData.characters[this.unit_id].traces["Quantum DMG Boost"] ?? 0),
-            "Wind": 0 + (gameData.characters[this.unit_id].traces["Wind DMG Boost"] ?? 0),
-            "Fire": 0 + (gameData.characters[this.unit_id].traces["Fire DMG Boost"] ?? 0)
+        this.lcStats = {
+            "HP": (getLCStats(this.lightcone) ?? 0)["HPDelta"] ?? 0,
+            "ATK": (getLCStats(this.lightcone) ?? 0)["AttackDelta"] ?? 0,
+            "DEF": (getLCStats(this.lightcone) ?? 0)["DefenceDelta"] ?? 0,
+            "HP%": (getLCStats(this.lightcone) ?? 0)["HPAddedRatio"] ?? 0,
+            "ATK%": (getLCStats(this.lightcone) ?? 0)["AttackAddedRatio"] ?? 0,
+            "DEF%": (getLCStats(this.lightcone) ?? 0)["DefenceAddedRatio"] ?? 0,
+            "CR": (getLCStats(this.lightcone) ?? 0)["CriticalChanceBase"] ?? 0,
+            "CD": (getLCStats(this.lightcone) ?? 0)["CriticalDamageBase"] ?? 0,
+            "HealRatio": (getLCStats(this.lightcone) ?? 0)["HealRatioBase"] ?? 0,
+            "EHR": (getLCStats(this.lightcone) ?? 0)["StatusProbabilityBase"] ?? 0,
+            "SPD": (getLCStats(this.lightcone)?? 0)["SpeedDelta"] ?? 0,
+            "BE": (getLCStats(this.lightcone) ?? 0)["BreakDamageAddedRatioBase"] ?? 0,
+            "EffectRES": (getLCStats(this.lightcone) ?? 0)["StatusResistanceBase"] ?? 0,
+            "ERR": (getLCStats(this.lightcone) ?? 0)["SPRatioBase"] ?? 0,
+            "Elation%": (getLCStats(this.lightcone) ?? 0)["Elation%"] ?? 0,
+            "SPD%": (getLCStats(this.lightcone) ?? 0)["SPD%"] ?? 0
         }
 
-        this.spd = this.base_spd + this.relicStats.SPD
+        this.base_stats = {
+            "hp": gameData.characters[this.unit_id].stats.HP + gameData.lightCones[this.lightcone.id].stats.HP,
+            "atk": gameData.characters[this.unit_id].stats.ATK + gameData.lightCones[this.lightcone.id].stats.ATK,
+            "def": gameData.characters[this.unit_id].stats.DEF + gameData.lightCones[this.lightcone.id].stats.DEF,
+            "spd": gameData.characters[this.unit_id].stats.SPD,
+            "cr": 0.05 + (gameData.characters[this.unit_id].traces["CRIT Rate"] ?? 0),
+            "cd": 0.5 + (gameData.characters[this.unit_id].traces["CRIT DMG"] ?? 0),
+            "ehr": 0 + (gameData.characters[this.unit_id].traces["Effect Hit Rate"] ?? 0),
+            "eres": 0 + (gameData.characters[this.unit_id].traces["Effect RES"] ?? 0),
+            "be": 0 + (gameData.characters[this.unit_id].traces["Break Effect"] ?? 0),
+            "err": 1,
+            "heal_ratio": 0,
+            "elation": 0 + (gameData.characters[this.unit_id].traces["Elation"] ?? 0),
+            "dmg_boost": {
+                "Physical": 0 + (gameData.characters[this.unit_id].traces["Physical DMG Boost"] ?? 0),
+                "Ice": 0 + (gameData.characters[this.unit_id].traces["Ice"] ?? 0),
+                "Imaginary": 0 + (gameData.characters[this.unit_id].traces["Imaginary"] ?? 0),
+                "Lightning": 0 + (gameData.characters[this.unit_id].traces["Lightning DMG Boost"] ?? 0),
+                "Quantum": 0 + (gameData.characters[this.unit_id].traces["Quantum DMG Boost"] ?? 0),
+                "Wind": 0 + (gameData.characters[this.unit_id].traces["Wind DMG Boost"] ?? 0),
+                "Fire": 0 + (gameData.characters[this.unit_id].traces["Fire DMG Boost"] ?? 0)
+            }
+        }
+
+        //relics, traces and lcs
+        this.base_added_stats = {
+            "hp": this.relicStats["HP"] + this.base_stats.hp * (this.relicStats["HP%"] + (gameData.characters[this.unit_id].traces["HP%"] ?? 0)) + this.lcStats["HP"],
+            "atk": this.relicStats["ATK"] + this.base_stats.atk * (this.relicStats["ATK%"] + (gameData.characters[this.unit_id].traces["ATK%"] ?? 0)) + this.lcStats["ATK"],
+            "def": this.relicStats["DEF"] + this.base_stats.def * (this.relicStats["DEF%"] + (gameData.characters[this.unit_id].traces["DEF%"] ?? 0)) + this.lcStats["DEF"],
+            "cr": this.relicStats["CR"] + this.lcStats["CR"],
+            "cd": this.relicStats["CD"] + this.lcStats["CD"],
+            "heal_ratio": this.relicStats["HealRatio"] + this.lcStats["HealRatio"],
+            "ehr": this.relicStats["EHR"] + this.lcStats["EHR"],
+            "eres": this.relicStats["EffectRES"] + this.lcStats["EffectRES"],
+            "be": this.relicStats["BE"] + this.lcStats["BE"],
+            "err": this.relicStats["ERR"] + this.lcStats["ERR"],
+            "elation": this.relicStats["Elation%"] + this.lcStats["Elation%"],
+            "dmg_boost": {
+                "Physical": this.relicStats["PhysicalDMGBoost"],
+                "Fire": this.relicStats["FireDMGBoost"],
+                "Ice": this.relicStats["IceDMGBoost"],
+                "Lightning": this.relicStats["ThunderDMGBoost"],
+                "Wind": this.relicStats["WindDMGBoost"],
+                "Quantum": this.relicStats["QuantumDMGBoost"],
+                "Imaginary": this.relicStats["ImaginaryDMGBoost"],
+            },
+            "spd": this.relicStats["SPD"] + this.base_stats.spd * this.relicStats["SPD%"] + this.lcStats["SPD"] + (gameData.characters[this.unit_id].traces["SPD"] ?? 0)
+        }
+
+        console.log((this.relicStats["ATK%"] + (gameData.characters[this.unit_id].traces["ATK%"] ?? 0)))
+
+        this.spd = this.base_stats.spd + this.base_added_stats.spd
 
         this.current_speed = this.spd; 
         this.kit = kit;
         
         this.base_action_value = action_value_from_spd(this.current_speed);
         this.current_action_value = this.base_action_value;
-
-        console.log(this.base_spd, this.base_hp, this.base_atk, this.base_def, this.spd, this.relicStats)
     }
 
     adjust_action_guage(advance_ratio, delay_ratio) {

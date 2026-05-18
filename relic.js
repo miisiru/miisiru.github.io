@@ -130,7 +130,7 @@ export class Relics {
 }
 
 const Evanescia = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "PhysicalAddedRatio", "SPRatioBase").addSubStats(["CriticalChanceBase", 11, "mid"], ["CriticalDamageBase", 13, "mid"]).changeSets(129, 129, 325).stats
-const Sunday = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["SpeedDelta", 1, "mid"], ["CriticalDamagteBase", 15, "mid"]).changeSets(121, 121, 317).stats
+const Sunday = new Relics().addMainStats("CriticalDamageBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["SpeedDelta", 1, "mid"], ["CriticalDamageBase", 15, "mid"]).changeSets(121, 121, 317).stats
 const Robin = new Relics().addMainStats("AttackAddedRatio","AttackAddedRatio","AttackAddedRatio","SPRatioBase").addSubStats(["AttackDelta", 9, "mid"], ["AttackAddedRatio", 15, "mid"]).changeSets(123, 116, 317).stats
 const Huohuo = new Relics().addMainStats("HealRatioBase", "SpeedDelta", "HPAddedRatio", "SPRatioBase").addSubStats(["HPAddedRatio", 15, "mid"], ["SpeedDelta", 15, "mid"]).changeSets(125, 125, 317).stats
 

@@ -37,64 +37,85 @@
                 </div>
             </div>
 
-            <div id="relic-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
-                <div id="relic-modal-scroll" class="panel" style="width: 480px; max-width: 90%; background: var(--panel); border: 1px solid #2d3748; padding: 20px; border-radius: 8px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;">
-                    <h3 id="relic-modal-title" style="margin-top:0; color:var(--gold);">유물 설정</h3>
-
-                    <div style="margin-bottom: 20px; background: #0f172a; padding: 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <h4 style="margin-top: 0; margin-bottom: 8px; color: #cbd5e1; font-size: 13px;">주옵션 추가</h4>
-                        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                            <select id="relic-main-select" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:6px; border-radius:4px; font-size:12px;">
-                                <option value="HPDelta">깡체</option>
-                                <option value="AttackDelta">깡공</option>
-                                <option value="HPAddedRatio">체력%</option>
-                                <option value="AttackAddedRatio">공격력%</option>
-                                <option value="DefenceAddedRatio">방어력%</option>
-                                <option value="SpeedDelta">속도</option>
-                                <option value="CriticalChanceBase">치명타 확률</option>
-                                <option value="CriticalDamageBase">치명타 피해</option>
-                                <option value="StatusProbabilityBase">효과 명중</option>
-                                <option value="HealRatioBase">치유량 보너스</option>
-                                <option value="SPRatioBase">에너지 회복효율</option>
-                                <option value="BreakDamageAddedRatioBase">격파 특수효과</option>
-                                <option value="PhysicalAddedRatio">물리 속성 피해 증가</option>
-                                <option value="IceAddedRatio">얼음 속성 피해 증가</option>
-                                <option value="ThunderAddedRatio">번개 속성 피해 증가</option>
-                                <option value="WindAddedRatio">바람 속성 피해 증가</option>
-                                <option value="QuantumAddedRatio">양자 속성 피해 증가</option>
-                                <option value="ImaginaryAddedRatio">허수 속성 피해 증가</option>
-                            </select>
-                            <button class="main-btn" id="add-main-stat-btn" style="margin:0; padding: 6px 12px;">추가</button>
+            <div id="relic-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(3,7,18,0.9); z-index:2000; justify-content:center; align-items:center;">
+                <div style="position:relative; width: 620px; max-width: 95%; background: #0e1322; border: 1px solid #1e293b; border-radius: 12px; display: flex; flex-direction: column; max-height: 80vh; color: #f3f4f6; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow: hidden;">
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 16px 24px; border-bottom: 1px solid #1e293b; flex-shrink: 0; padding-right: 60px;">
+                        <h3 id="relic-modal-title" style="margin: 0; color: var(--gold); font-size: 16px; font-weight: bold;">캐릭터 - 유물 설정</h3>
+                        <button id="save-relic-btn-top" style="background: var(--success); border: none; color: #fff; padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">저장</button>
+                    </div>
+                    
+                    <button id="close-relic-btn-top" style="position: absolute; top: 18px; right: 20px; z-index: 110; background: transparent; border: none; color: #94a3b8; font-size: 26px; cursor: pointer; line-height: 1; padding: 0; transition: color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">&times;</button>
+                    
+                    <div id="relic-modal-scroll" style="width: 100%; flex: 1; padding: 20px 24px; box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background: #121826;">
+                        
+                        <div style="background: #182030; padding: 16px; border-radius: 8px; border: 1px solid #26324d;">
+                            <h4 style="margin: 0 0 12px 0; color: #cbd5e1; font-size: 13px;">주옵션 추가</h4>
+                            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                <select id="relic-main-select" style="flex:1; background:#0b0f1a; border:1px solid #3b4f76; color:var(--text); padding:6px; border-radius:4px; font-size:12px; outline: none;">
+                                    <option value="HPDelta">깡체</option>
+                                    <option value="AttackDelta">깡공</option>
+                                    <option value="HPAddedRatio">체력%</option>
+                                    <option value="AttackAddedRatio">공격력%</option>
+                                    <option value="DefenceAddedRatio">방어력%</option>
+                                    <option value="SpeedDelta">속도</option>
+                                    <option value="CriticalChanceBase">치명타 확률</option>
+                                    <option value="CriticalDamageBase">치명타 피해</option>
+                                    <option value="StatusProbabilityBase">효과 명중</option>
+                                    <option value="HealRatioBase">치유량 보너스</option>
+                                    <option value="SPRatioBase">에너지 회복효율</option>
+                                    <option value="BreakDamageAddedRatioBase">격파 특수효과</option>
+                                    <option value="PhysicalAddedRatio">물리 속성 피해 증가</option>
+                                    <option value="FireAddedRatio">화염 속성 피해 증가</option>
+                                    <option value="IceAddedRatio">얼음 속성 피해 증가</option>
+                                    <option value="ThunderAddedRatio">번개 속성 피해 증가</option>
+                                    <option value="WindAddedRatio">바람 속성 피해 증가</option>
+                                    <option value="QuantumAddedRatio">양자 속성 피해 증가</option>
+                                    <option value="ImaginaryAddedRatio">허수 속성 피해 증가</option>
+                                </select>
+                                <button class="main-btn" id="add-main-stat-btn" style="margin:0; padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">추가</button>
+                            </div>
+                            <div id="relic-main-list" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
                         </div>
-                        <div id="relic-main-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-                    </div>
 
-                    <div style="margin-bottom: 20px; background: #0f172a; padding: 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <h4 style="margin-top: 0; margin-bottom: 8px; color: #cbd5e1; font-size: 13px;">부옵션 추가</h4>
-                        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                            <select id="relic-sub-select" style="flex:1; background:#0b0f1a; border:1px solid #2d3748; color:var(--text); padding:6px; border-radius:4px; font-size:12px;">
-                                <option value="HPDelta">깡체</option>
-                                <option value="AttackDelta">깡공</option>
-                                <option value="DefenceDelta">깡방</option>
-                                <option value="HPAddedRatio">체력%</option>
-                                <option value="AttackAddedRatio">공격력%</option>
-                                <option value="DefenceAddedRatio">방어력%</option>
-                                <option value="SpeedDelta">속도</option>
-                                <option value="CriticalChanceBase">치명타 확률</option>
-                                <option value="CriticalDamageBase">치명타 피해</option>
-                                <option value="StatusProbabilityBase">효과 명중</option>
-                                <option value="StatusResistanceBase">효과 저항</option>
-                                <option value="BreakDamageAddedRatioBase">격파 특수효과</option>
-                            </select>
-                            <button class="main-btn" id="add-sub-stat-btn" style="margin:0; padding: 6px 12px;">추가</button>
+                        <div style="background: #182030; padding: 16px; border-radius: 8px; border: 1px solid #26324d;">
+                            <h4 style="margin: 0 0 12px 0; color: #cbd5e1; font-size: 13px;">부옵션 추가</h4>
+                            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                <select id="relic-sub-select" style="flex:1; background:#0b0f1a; border:1px solid #3b4f76; color:var(--text); padding:6px; border-radius:4px; font-size:12px; outline: none;">
+                                    <option value="HPDelta">깡체</option>
+                                    <option value="AttackDelta">깡공</option>
+                                    <option value="DefenceDelta">깡방</option>
+                                    <option value="HPAddedRatio">체력%</option>
+                                    <option value="AttackAddedRatio">공격력%</option>
+                                    <option value="DefenceAddedRatio">방어력%</option>
+                                    <option value="SpeedDelta">속도</option>
+                                    <option value="CriticalChanceBase">치명타 확률</option>
+                                    <option value="CriticalDamageBase">치명타 피해</option>
+                                    <option value="StatusProbabilityBase">효과 명중</option>
+                                    <option value="StatusResistanceBase">효과 저항</option>
+                                    <option value="BreakDamageAddedRatioBase">격파 특수효과</option>
+                                </select>
+                                <button class="main-btn" id="add-sub-stat-btn" style="margin:0; padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">추가</button>
+                            </div>
+                            <div id="relic-sub-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
                         </div>
-                        <div id="relic-sub-list" style="display:flex; flex-direction:column; gap:8px;"></div>
-                    </div>
 
-                    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
-                        <button class="main-btn" id="close-relic-btn" style="background:#4b5563; margin:0; padding: 6px 12px;">취소</button>
-                        <button class="main-btn" id="save-relic-btn" style="margin:0; padding: 6px 12px;">저장</button>
                     </div>
+                </div>
+            </div>
+
+            <div id="lc-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(3,7,18,0.9); z-index:2000; justify-content:center; align-items:center;">
+                <div style="position:relative; width: 560px; max-width: 95%; background: #0e1322; border: 1px solid #1e293b; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; color: #f3f4f6; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow: hidden;">
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 16px 24px; border-bottom: 1px solid #1e293b; flex-shrink: 0; padding-right: 60px;">
+                        <h3 id="lc-modal-title" style="margin: 0; color: var(--gold); font-size: 16px; font-weight: bold;">캐릭터 - 광추 설정</h3>
+                        <button id="save-lc-btn-top" style="background: var(--success); border: none; color: #fff; padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">저장</button>
+                    </div>
+                    
+                    <button id="close-lc-btn-top" style="position: absolute; top: 18px; right: 20px; z-index: 110; background: transparent; border: none; color: #94a3b8; font-size: 26px; cursor: pointer; line-height: 1; padding: 0; transition: color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">&times;</button>
+                    
+                    <div id="lc-modal-scroll" style="width: 100%; flex: 1; padding: 20px 24px; box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: #121826;">
+                        </div>
                 </div>
             </div>
 
@@ -126,7 +147,7 @@
                         <div id="detail-modal-scroll" style="flex: 1; padding: 20px 24px 24px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; overflow-y: auto;">
                             
                             <div style="background: #182030; border: 1px solid #26324d; border-radius: 8px; padding: 14px; display: flex; gap: 16px; align-items: center;">
-                                <div style="width: 55px; height: 72px; background: #090d16; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #3b4f76;">
+                                <div style="width: 55px; height: 72px; background: #090d16; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #3b4f76;">
                                     <img id="detail-lc-img" src="" style="width: 100%; height: 100%; object-fit: cover;">
                                 </div>
                                 <div style="flex: 1;">
@@ -134,9 +155,11 @@
                                         <img id="detail-lc-path-icon" src="" style="width: 18px; height: 18px; object-fit: contain; opacity: 0.9;">
                                         <span id="detail-lc-name" style="font-weight: bold; color: var(--gold); font-size: 14px;">광추 이름</span>
                                     </div>
-                                    <div style="font-size: 12px; color: #64748b;">Lv. 80 / <span id="detail-lc-superimposition" style="color: #38bdf8;">중첩 V</span></div>
+                                    <div style="font-size: 12px; color: #64748b;">Lv. <span id="detail-lc-level">80</span> / <span id="detail-lc-superimposition" style="color: #38bdf8;">중첩 V</span></div>
                                 </div>
                             </div>
+
+                            <div id="detail-relic-sets" style="width: 100%;"></div>
                             
                             <div>
                                 <div id="detail-stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;"></div>

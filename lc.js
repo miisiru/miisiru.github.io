@@ -43,3 +43,21 @@ export function getBaseLCId(id) {
 
     return idMap[id] ?? 0;
 }
+
+export function getLCStats(lc) {
+    // 1. 넘겨받은 광추 객체(lc)가 유효한지 검사
+    if (!lc || !lc.id) return null;
+
+    // 2. gameData.lightCones 객체 또는 배열에서 해당 ID의 광추 데이터 가져오기
+    // (lightCones가 객체 맵 구조라면 gameData.lightCones[lc.id]로 바로 접근해도 됩니다.)
+    const lcData = gameData.lightCones[lc.id] ?? Object.values(gameData.lightCones).find(item => String(item.id) === String(lc.id));
+    
+    if (!lcData || !lcData.superimpositions) return null;
+
+    // 3. lc.superimposition(중첩 단계) 값 가져오기 (없으면 기본값 1)
+    const currentRank = lc.superimposition;
+
+    // 4. 해당 중첩 단계의 스탯 객체를 매칭하여 반환
+    // 예: currentRank가 1이면 { "DefenceAddedRatio": 0.24, "StatusProbabilityBase": 0.24 } 가 반환됨
+    return lcData.superimpositions[currentRank];
+}
