@@ -12,7 +12,8 @@ export let state = {
     selectedPhase: null,
     selectedLightCones: PRESET_UNITS.map(u => u.lightcone ? u.lightcone.id : null),
     selectedRelics: PRESET_UNITS.map(u => u.relics ? JSON.parse(JSON.stringify(u.relics)) : { main: [], sub: [] }),
-    insertedEvents: []
+    insertedEvents: [],
+    selectedSubEventId: null
 };
 
 // 기존에 선언되지 않았다면 state 객체 하위에 레벨/중첩 저장소 동적 할당 보장
@@ -299,15 +300,22 @@ function render() {
             const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
             const imgPath = `imgs/avatarshopicon/${targetUnit.unit_id}.png`;
             const ultDiv = document.createElement('div');
-            ultDiv.className = 'action-card ult-card';
+            // CSS에서 기존 테두리를 강제하지 않도록 style로 덮어씁니다.
+            ultDiv.className = 'action-card';
+            ultDiv.style.cssText = 'border: 2px solid #0284c7; background: rgba(14, 116, 144, 0.35); box-shadow: 0 0 8px rgba(3, 105, 161, 0.3);';
+            
             ultDiv.innerHTML = `
                 <div class="card-main-header">
-                    <div class="av-container" data-tooltip="${item.av}"><div class="av-display">${item.av.toFixed(2)}</div></div>
-                    <div class="card-unit-info"><div class="card-action-name" style="color: #d946ef;">[궁극기] ${targetUnit.name}</div></div>
+                    <div class="av-container" style="border-right: none;" data-tooltip="${item.av}">
+                        <div class="av-display" style="color: #7dd3fc;">${item.av.toFixed(2)}</div>
+                    </div>
+                    <div class="card-unit-info">
+                        <div class="card-action-name" style="color: #38bdf8; font-weight: bold;">[궁극기] ${targetUnit.name}</div>
+                    </div>
                 </div>
-                <div class="card-bg-image" style="background-image: url('${imgPath}');"></div>
+                <div class="card-bg-image" style="background-image: url('${imgPath}'); opacity: 0.85;"></div>
             `;
-            ultDiv.onclick = () => selectCard(idx); // 이 위장 카드를 눌러도 부모 턴이 확장됨!
+            ultDiv.onclick = () => selectCard(idx); 
             return ultDiv;
         };
 
@@ -369,20 +377,45 @@ function render() {
                 item.followUpEvents[pNum].forEach((ev, evIdx) => {
                     const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
                     const isEvUlt = ev.type === 'Ult';
+                    
+                    // 💡 각 이벤트노드가 고유 ID를 가질 수 있도록 루프 인덱스 조합 (recalculate에서 넘겨준 id가 있다면 ev.id 사용)
+                    const subEventId = ev.id || `${item.id}_${pNum}_${evIdx}`;
+                    const isSubSelected = state.selectedSubEventId === subEventId;
+
                     let desc = isEvUlt ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
                     
-                    // 💡 궁극기 전용 CSS 인라인 스타일 추가
-                    const evStyle = isEvUlt ? 'border-left: 3px solid #d946ef; background: #2d1b38;' : '';
-                    const tagColor = isEvUlt ? 'color: #d946ef;' : '';
-                    const descColor = isEvUlt ? 'color: #e879f9; font-weight: bold;' : '';
+                    const evStyle = isEvUlt ? `border-left: 3px solid #38bdf8; background: rgba(14, 116, 144, 0.35); cursor: pointer; position:relative; ${isSubSelected ? 'border-bottom: 1px dashed rgba(56, 189, 248, 0.5);' : ''}` : '';
+                    const tagColor = isEvUlt ? 'color: #38bdf8;' : '';
+                    const descColor = isEvUlt ? 'color: #7dd3fc; font-weight: bold;' : '';
 
+                    // 1. 이벤트 본문 카드 (클릭 시 자식 페이즈 토글)
                     cardHtml += `
-                        <div class="card-followup-item-expanded" style="${evStyle}" onclick="event.stopPropagation();">
+                        <div class="card-followup-item-expanded" style="${evStyle}" 
+                             onclick="event.stopPropagation(); window.toggleSubEvent('${subEventId}');">
                             <span class="followup-tag" style="${tagColor}">↳ ${isEvUlt ? 'ULT' : 'Event'}</span>
                             <span class="followup-desc" style="${descColor}">${desc}</span>
-                            <span class="followup-del-btn" onclick="window.removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
+                            <span class="followup-del-btn" onclick="event.stopPropagation(); window.removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
                         </div>
                     `;
+
+                    // 2. 💡 [핵심] 궁극기 카드가 클릭되어 활성화(True) 상태라면 하위에 서브 페이즈(Action Start/End) 주입
+                    if (isEvUlt && isSubSelected) {
+                        cardHtml += `
+                            <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
+                                <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
+                                    <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
+                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${item.afterSp} | E: 0</span>
+                                </div>
+                                <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
+                                    ${targetUnit.name} 필살기 진행
+                                </div>
+                                <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
+                                    <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
+                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${item.afterSp} | E: 5</span>
+                                </div>
+                            </div>
+                        `;
+                    }
                 });
 
                 if (pNum === 2) {
@@ -556,6 +589,11 @@ async function loadUserData() {
     }
 }
 
+window.toggleSubEvent = function(subEventId) {
+    // 클릭한 ID가 이미 열려있으면 닫기(null), 아니면 열기
+    state.selectedSubEventId = (state.selectedSubEventId === subEventId) ? null : subEventId;
+    render(); // 상태 변경 후 화면 다시 그리기
+};
 window.selectPhase = selectPhase;
 window.removeFollowUpEvent = removeFollowUpEvent;
 window.addFollowUpEvent = addFollowUpEvent;
