@@ -30,8 +30,6 @@ window.buildInitialTimeline = buildInitialTimeline;
 window.selectCard = selectCard;
 window.updateCurrentAction = updateCurrentAction;
 window.addFollowUpEvent = addFollowUpEvent;
-window.openUltPanel = openUltPanel;
-window.confirmUltInsert = confirmUltInsert;
 
 function buildInitialTimeline() {
     state.unitData = PRESET_UNITS.map((p, i) => {
@@ -56,101 +54,168 @@ function buildInitialTimeline() {
 function recalculate() {
     const limit = parseFloat(document.getElementById('limit-av').value) || 500;
     let sp = 3;
-    let currentAV = 0;
     let newTimeline = [];
     
-    // 1. 시뮬레이션용 유닛 초기화 (AV 가산점 제거, 순수 AV 사용)
+    // 1. 시뮬레이션용 유닛 초기화 (원본 데이터 보호)
     let simUnits = state.unitData.map((u, i) => {
-        let nu = u
-        nu.energy = nu.max_energy*0.5; 
+        let nu = { ...u }; // 얕은 복사
+        nu.energy = nu.max_energy * 0.5; 
         nu.turnCount = 0; 
-        nu.partyIndex = i;        // 파티 순서 (동일 AV 시 2순위)
-        nu.lastAdvancedAV = -1;   // 행게증 받은 시점 (동일 AV 시 1순위)
+        nu.partyIndex = i;        
+        nu.lastAdvancedAV = -1;   
         nu.current_action_value = nu.base_action_value; 
         return nu;
     });
 
-    // 2. 메인 시뮬레이션 루프
-    while (true) {
-        // 정교한 3단계 정렬 (AV 숫자는 절대 건드리지 않음)
-        simUnits.sort((a, b) => {
-            // [1단계] AV 비교
-            if (Math.abs(a.current_action_value - b.current_action_value) > 1e-9) {
-                return a.current_action_value - b.current_action_value;
-            }
-            // [2단계] AV가 같다면, 더 최근에 행게증을 받은 유닛이 무조건 우선
-            if (a.lastAdvancedAV !== b.lastAdvancedAV) {
-                return b.lastAdvancedAV - a.lastAdvancedAV; // 최신 시점(큰 값)이 우선
-            }
-            // [3단계] 위 조건도 같다면 파티 등록 순서
+    // 💡 2. 타임라인 이벤트 큐 생성 (사용자님 아이디어 적용!)
+    // 이제 엔진은 캐릭터가 아니라 '이벤트 큐'를 중심으로 돌아갑니다.
+    let eventQueue = [];
+
+    // 최초의 정규 턴들을 큐에 장전
+    simUnits.forEach(u => {
+        eventQueue.push({
+            eventType: 'TURN',
+            av: u.current_action_value,
+            unitId: u.unit_id,
+            turnCount: 0,
+            lastAdvancedAV: u.lastAdvancedAV,
+            partyIndex: u.partyIndex
+        });
+    });
+
+    // 3. 메인 시뮬레이션 루프 (큐에 이벤트가 있는 동안 무한 반복)
+    while (eventQueue.length > 0) {
+        
+        // [정렬] 큐에 있는 모든 이벤트들을 AV(시간) 순서대로 정렬
+        eventQueue.sort((a, b) => {
+            if (Math.abs(a.av - b.av) > 1e-9) return a.av - b.av;
+            // AV가 같을 경우 행게증 최신화 및 파티 순서 적용
+            if (a.lastAdvancedAV !== b.lastAdvancedAV) return b.lastAdvancedAV - a.lastAdvancedAV;
             return a.partyIndex - b.partyIndex;
         });
 
-        let actor = simUnits[0];
+        // 가장 먼저 일어날 이벤트를 뽑음
+        let currentEvent = eventQueue.shift();
         
-        if (actor.current_action_value > limit) break;
-        currentAV = actor.current_action_value;
+        if (currentEvent.av > limit) break;
+        if (newTimeline.length > 250) break; // 무한 루프 방지용 안전 장치
 
-        // 행동 시작 시 행게증 우선권 사용 완료 처리
-        actor.lastAdvancedAV = -1;
+        let actor = simUnits.find(u => u.unit_id === currentEvent.unitId);
+        if (!actor) continue;
 
-        let actionType = state.actionPlans[actor.unit_id][actor.turnCount] || "BASIC";
-        let kit = (actionType === "S") ? actor.kit.skill : actor.kit.basic;
+        // ==========================================
+        // 🎬 큐에서 뽑은 이벤트가 '정규 턴'일 경우 처리
+        // ==========================================
+        if (currentEvent.eventType === 'TURN') {
+            actor.lastAdvancedAV = -1; // 행동 시작 시 행게증 우선권 초기화
 
-        // 💡 1. 정규 턴 노드 생성
-        let record = {
-            id: Math.random(),
-            unitId: actor.unit_id,
-            name: actor.name,
-            av: currentAV,
-            type: actionType,
-            isTurn: true, // 정규 턴 식별 플래그
-            followUpEvents: { 1: [], 2: [], 3: [], 4: [] }, // 종속 이벤트 보관함
-            beforeSp: sp,
-            beforeEnergy: actor.energy
-        };
+            // 정규 턴 계획 읽어오기
+            let actionType = state.actionPlans[actor.unit_id][currentEvent.turnCount] || "BASIC";
+            let kit = (actionType === "S") ? actor.kit.skill : actor.kit.basic;
 
-        // --- (기존 선데이 행동 게이지 조작 로직은 그대로 유지) ---
-        if (actionType === "S" && actor.name === "Sunday") {
-            let target = simUnits.find(u => u.name === "Evanescia");
-            if (target) {
-                target.current_action_value = currentAV;
-                target.lastAdvancedAV = currentAV; 
+            // 💡 1. 턴 노드 구조에 phaseEnterStates (페이즈 진입 시점 기록장) 추가
+            let turnNode = {
+                id: Math.random(),
+                unitId: actor.unit_id,
+                name: actor.name,
+                av: currentEvent.av,
+                type: actionType,
+                isTurn: true,
+                followUpEvents: { 1: [], 2: [], 3: [], 4: [] },
+                phaseEnterStates: {}, // ✨ 각 페이즈 진입 순간의 SP/E 기록
+                beforeSp: sp,
+                beforeEnergy: actor.energy
+            };
+
+            let relatedEvents = state.insertedEvents.filter(ev => ev.baseUnitId === actor.unit_id && ev.baseTurnNth === currentEvent.turnCount);
+
+            const processFollowUp = (ev, phase) => {
+                let bSp = sp;
+                let bE = 0;
+                let aSp = sp;
+                let aE = 0;
+
+                if (ev.type === 'Ult') { 
+                    let ultActor = simUnits.find(u => u.unit_id === ev.unitId);
+                    if (ultActor) {
+                        bE = ultActor.energy; // 💡 궁극기 쓰기 직전 실제 에너지 저장
+
+                        let ultKit = ultActor.kit.ultimate || ultActor.kit.ult || { energy_gain: 5, sp_cost: 0, sp_gain: 0, energy_cost: ultActor.max_energy };
+                        
+                        // 사용자님이 수정한 로직 적용 (안전성을 위해 fallback 값 추가)
+                        sp = Math.min(5, Math.max(0, sp + (ultKit.sp_gain || 0) - (ultKit.sp_cost || 0)));
+                        ultActor.energy = Math.min(ultActor.max_energy, ultActor.energy + (ultKit.energy_gain || 5) - (ultKit.energy_cost || ultActor.max_energy));
+                        
+                        aSp = sp;
+                        aE = ultActor.energy; // 💡 궁극기 쓴 직후 실제 에너지 저장
+                    }
+                }
+                
+                // 💡 UI에서 읽어갈 수 있도록 before/after 값을 객체에 같이 넣어서 푸시합니다!
+                turnNode.followUpEvents[phase].push({ 
+                    id: ev.id, type: ev.type, targetUnitId: ev.unitId, value: ev.value,
+                    beforeSp: bSp, beforeE: bE, afterSp: aSp, afterE: aE
+                });
+            };
+
+            // ⚡ [Phase 1] 턴 시작 전
+            turnNode.phaseEnterStates[1] = { sp: sp, e: actor.energy };
+            relatedEvents.filter(ev => ev.phase === 1).forEach(ev => processFollowUp(ev, 1));
+
+            // ⚡ [Phase 2] 액션 직전 (Phase 1 궁극기 결과 반영됨)
+            turnNode.phaseEnterStates[2] = { sp: sp, e: actor.energy };
+            relatedEvents.filter(ev => ev.phase === 2).forEach(ev => processFollowUp(ev, 2));
+
+            // ==========================================
+            // 🎬 메인 행동 (평타/전스) 연산
+            // ==========================================
+            if (actionType === "S" && actor.name === "Sunday") {
+                let target = simUnits.find(u => u.name === "Evanescia");
+                if (target) {
+                    target.current_action_value = currentEvent.av;
+                    target.lastAdvancedAV = currentEvent.av; 
+                    let targetEvent = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === target.unit_id);
+                    if (targetEvent) {
+                        targetEvent.av = target.current_action_value;
+                        targetEvent.lastAdvancedAV = target.lastAdvancedAV;
+                    }
+                }
             }
-        }
 
-        // 자원 정산
-        sp = Math.min(5, Math.max(0, sp + kit.sp_gain - kit.sp_cost));
-        actor.energy = Math.min(actor.max_energy, actor.energy + kit.energy_gain - kit.energy_cost);
-        record.afterSp = sp;
-        record.afterEnergy = actor.energy;
+            sp = Math.min(5, Math.max(0, sp + (kit.sp_gain || 0) - (kit.sp_cost || 0)));
+            actor.energy = Math.min(actor.max_energy, actor.energy + (kit.energy_gain || 0) - (kit.energy_cost || 0));
 
-        // 💡 2. 장부(insertedEvents)를 읽어와 이번 턴에 예약된 이벤트 분배
-        let relatedEvents = state.insertedEvents.filter(ev => ev.baseUnitId === actor.unit_id && ev.baseTurnNth === actor.turnCount);
-        
-        relatedEvents.forEach(ev => {
-            let eventActor = simUnits.find(u => u.unit_id === ev.unitId);
-            if (eventActor) eventActor.energy = 5; // 궁극기 소모 후 환급 처리
-            
-            // 독립 카드 생성 따위는 없음! 무조건 부모 카드의 종속 이벤트로 박아 넣습니다.
-            record.followUpEvents[ev.phase].push({
-                type: ev.type,
-                targetUnitId: ev.unitId,
-                value: 0
+            // ⚡ [Phase 3] 액션 직후 (✨ 메인 행동으로 에너지가 꽉 찬 상태 기록!)
+            turnNode.phaseEnterStates[3] = { sp: sp, e: actor.energy };
+            relatedEvents.filter(ev => ev.phase === 3).forEach(ev => processFollowUp(ev, 3));
+
+            // ⚡ [Phase 4] 턴 종료 후
+            turnNode.phaseEnterStates[4] = { sp: sp, e: actor.energy };
+            relatedEvents.filter(ev => ev.phase === 4).forEach(ev => processFollowUp(ev, 4));
+
+            turnNode.afterSp = sp;
+            turnNode.afterEnergy = actor.energy;
+
+            // 완성된 행동 노드를 타임라인에 등록
+            newTimeline.push(turnNode);
+
+            // 💡 [핵심] 현재 턴이 끝났으므로, 캐릭터의 다음 일정을 계산해 큐(Queue)에 예약합니다.
+            actor.turnCount++;
+            actor.current_action_value += actor.base_action_value;
+
+            eventQueue.push({
+                eventType: 'TURN',
+                av: actor.current_action_value,
+                unitId: actor.unit_id,
+                turnCount: actor.turnCount,
+                lastAdvancedAV: actor.lastAdvancedAV,
+                partyIndex: actor.partyIndex
             });
-        });
-
-        // 타임라인에는 오직 '정규 턴' 카드만 존재합니다.
-        newTimeline.push(record);
-
-        // 유닛 상태 업데이트
-        actor.turnCount++;
-        actor.current_action_value += actor.base_action_value;
-
-        if (newTimeline.length > 250) break; 
+        }
     }
 
-    state.timeline = newTimeline.sort((a, b) => a.av - b.av);
+    // 큐에서 이미 시간순으로 뽑혀 나왔으므로 재정렬 불필요
+    state.timeline = newTimeline; 
     render();
 }
 
@@ -219,28 +284,60 @@ function addFollowUpEvent() {
     if (state.selectedIdx === null || state.selectedPhase === null) return;
     
     const item = state.timeline[state.selectedIdx];
-    if (!item.followUpEvents) {
-        item.followUpEvents = { 1: [], 2: [], 3: [], 4: [] };
-    }
-    
     const type = document.getElementById('event-type-select').value;
     const targetUnitId = parseInt(document.getElementById('event-target-select').value);
     const value = parseFloat(document.getElementById('event-value-input').value || 0);
-    
-    item.followUpEvents[state.selectedPhase].push({
+    const targetUnit = state.unitData.find(u => u.unit_id === targetUnitId);
+
+    // 현재 선택된 턴이 해당 캐릭터의 몇 번째 턴인지 찾기
+    let nth = state.timeline.filter(a => a.unitId === item.unitId && a.isTurn).indexOf(item);
+
+    // 💡 화면이 아니라 '장부(insertedEvents)'에 정식으로 예약합니다!
+    state.insertedEvents.push({
+        id: Math.random(), // 고유 ID 부여
+        baseUnitId: item.unitId,
+        baseTurnNth: nth,
+        phase: state.selectedPhase,
+        unitId: targetUnitId,
+        name: targetUnit ? targetUnit.name : 'Unknown',
         type: type,
-        targetUnitId: targetUnitId,
         value: type === 'Gauge' ? value : 0
     });
+
+    // 선택된 카드 유지용 백업
+    const backupUnitId = item.unitId;
+    const backupAV = item.av;
+
+    // 💡 여기서 엔진을 돌려 에너지를 확실히 깎고 타임라인을 새로 만듭니다.
+    recalculate(); 
+
+    // 타임라인이 새로 짜였으므로 포커스를 다시 찾아줍니다.
+    const newIdx = state.timeline.findIndex(t => t.unitId === backupUnitId && t.av === backupAV && t.isTurn);
+    if (newIdx !== -1) state.selectedIdx = newIdx;
     
-    render();
+    // (render는 recalculate 내부에서 호출되므로 생략)
 }
 
 function removeFollowUpEvent(cardIdx, phaseNum, eventIdx) {
     const item = state.timeline[cardIdx];
     if (item && item.followUpEvents && item.followUpEvents[phaseNum]) {
-        item.followUpEvents[phaseNum].splice(eventIdx, 1);
-        render();
+        const targetEv = item.followUpEvents[phaseNum][eventIdx];
+        
+        // 장부에서 해당 ID를 찾아 파기합니다.
+        const targetIndex = state.insertedEvents.findIndex(e => e.id === targetEv.id);
+        if (targetIndex !== -1) {
+            state.insertedEvents.splice(targetIndex, 1);
+        }
+
+        // 선택된 카드 유지용 백업
+        const backupUnitId = item.unitId;
+        const backupAV = item.av;
+
+        // 엔진을 다시 돌리면 취소된 내용이 반영(에너지 복구)됩니다.
+        recalculate();
+
+        const newIdx = state.timeline.findIndex(t => t.unitId === backupUnitId && t.av === backupAV && t.isTurn);
+        if (newIdx !== -1) state.selectedIdx = newIdx;
     }
 }
 
@@ -255,7 +352,7 @@ function updateDetail() {
 
     const setP = (id, s, e) => {
         const el = document.getElementById(id);
-        el.querySelector('.p-effect').innerHTML = `SP: <strong>${s}</strong> | Energy: <strong>${Math.floor(e || 0)}</strong>`;
+        if (el) el.querySelector('.p-effect').innerHTML = `SP: <strong>${s}</strong> | Energy: <strong>${Math.floor(e || 0)}</strong>`;
     };
 
     const isEvent = action.isTurn === false;
@@ -264,12 +361,20 @@ function updateDetail() {
 
     document.querySelectorAll('.phase-item').forEach(p => p.classList.remove('highlight'));
 
-    setP('p-turn-start', action.beforeSp, action.beforeEnergy);
-    setP('p-action-start', action.beforeSp, action.beforeEnergy);
-    setP('p-action-end', action.afterSp, action.afterEnergy);
-    setP('p-turn-end', action.afterSp, action.afterEnergy);
+    // 💡 뭉뚱그린 결과(before/after) 대신, 각 페이즈 진입 시점의 정확한 자원을 출력
+    if (action.phaseEnterStates) {
+        setP('p-turn-start', action.phaseEnterStates[1].sp, action.phaseEnterStates[1].e);
+        setP('p-action-start', action.phaseEnterStates[2].sp, action.phaseEnterStates[2].e);
+        setP('p-action-end', action.phaseEnterStates[3].sp, action.phaseEnterStates[3].e);
+        setP('p-turn-end', action.phaseEnterStates[4].sp, action.phaseEnterStates[4].e);
+    } else {
+        // 혹시라도 예전 데이터 구조가 남아있을 경우를 대비한 백업 로직
+        setP('p-turn-start', action.beforeSp, action.beforeEnergy);
+        setP('p-action-start', action.beforeSp, action.beforeEnergy);
+        setP('p-action-end', action.afterSp, action.afterEnergy);
+        setP('p-turn-end', action.afterSp, action.afterEnergy);
+    }
 
-    document.querySelectorAll('.phase-item').forEach(p => p.classList.remove('highlight'));
     if (action.type === 'Ult') {
         document.getElementById('p-action-start').classList.add('highlight');
         document.getElementById('p-action-end').classList.add('highlight');
@@ -363,7 +468,10 @@ function render() {
             [1, 2, 3, 4].forEach(pNum => {
                 const isPSelected = state.selectedPhase === pNum;
                 const pNames = ["", "Turn Start", "Action Start", "Action End", "Turn End"];
-                const pEff = pNum <= 2 ? `SP: ${bSp} | E: ${bE}` : `SP: ${aSp} | E: ${aE}`;
+                
+                // 💡 1. 뭉뚱그린 결과(afterEnergy) 대신, 해당 페이즈에 '진입할 당시'의 자원을 출력합니다!
+                const pState = item.phaseEnterStates ? item.phaseEnterStates[pNum] : { sp: bSp, e: bE }; 
+                const pEff = `SP: ${pState.sp} | E: ${Math.floor(pState.e)}`;
 
                 cardHtml += `
                     <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); window.selectPhase(${pNum})">
@@ -378,9 +486,9 @@ function render() {
                     const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
                     const isEvUlt = ev.type === 'Ult';
                     
-                    // 💡 각 이벤트노드가 고유 ID를 가질 수 있도록 루프 인덱스 조합 (recalculate에서 넘겨준 id가 있다면 ev.id 사용)
                     const subEventId = ev.id || `${item.id}_${pNum}_${evIdx}`;
-                    const isSubSelected = state.selectedSubEventId === subEventId;
+                    // 💡 2. 숫자/문자열 타입 불일치 버그 해결: String()으로 감싸줍니다.
+                    const isSubSelected = state.selectedSubEventId === String(subEventId);
 
                     let desc = isEvUlt ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
                     
@@ -404,14 +512,14 @@ function render() {
                             <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
                                 <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
                                     <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
-                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${item.afterSp} | E: 0</span>
+                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${Math.floor(ev.beforeE || 0)}</span>
                                 </div>
                                 <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
                                     ${targetUnit.name} 필살기 진행
                                 </div>
                                 <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
                                     <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
-                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${item.afterSp} | E: 5</span>
+                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${Math.floor(ev.afterE || 0)}</span>
                                 </div>
                             </div>
                         `;
@@ -462,41 +570,6 @@ function render() {
         document.getElementById('energy-text-val').textContent = `${Math.floor(action.afterEnergy || 0)}/${unit.max_energy}`;
         document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
     }
-}
-
-function openUltPanel(phaseNum) {
-    if (state.selectedIdx === null || state.timeline[state.selectedIdx].type === 'Ult') return;
-    state.selectedPhase = phaseNum;
-    const panel = document.getElementById('ult-insert-panel');
-    const title = document.getElementById('insert-title');
-    const select = document.getElementById('ult-unit-select');
-    panel.style.display = 'block';
-    const names = ["", "Phase 1 (턴 시작 전)", "Phase 2 (액션 직전)", "Phase 3 (액션 직후)", "Phase 4 (턴 종료 후)"];
-    title.textContent = `난입 시점: ${names[phaseNum]}`;
-    select.innerHTML = state.unitData.map(u => `<option value="${u.unit_id}">${u.name}</option>`).join('');
-}
-
-function confirmUltInsert() {
-    const base = state.timeline[state.selectedIdx];
-    const uId = parseInt(document.getElementById('ult-unit-select').value);
-    const unit = state.unitData.find(u => u.unit_id === uId);
-    
-    // base 카드가 해당 캐릭터의 몇 번째 턴인지 추적
-    let nth = state.timeline.filter(a => a.unitId === base.unitId && a.type !== 'Ult').indexOf(base);
-    
-    // 꼼수 AV 조작 대신, 명확한 '이벤트 삽입 계획'을 저장
-    state.insertedEvents.push({
-        id: Math.random(),
-        baseUnitId: base.unitId,
-        baseTurnNth: nth,
-        phase: state.selectedPhase,
-        unitId: unit.unit_id,
-        name: unit.name,
-        type: 'Ult'
-    });
-    
-    recalculate();
-    document.getElementById('ult-insert-panel').style.display = 'none';
 }
 
 // script.js 맨 하단 관련 코드를 이 코드로 교체하세요
@@ -597,8 +670,6 @@ window.toggleSubEvent = function(subEventId) {
 window.selectPhase = selectPhase;
 window.removeFollowUpEvent = removeFollowUpEvent;
 window.addFollowUpEvent = addFollowUpEvent;
-window.confirmUltInsert = confirmUltInsert;
-window.openUltPanel = openUltPanel;
 window.updateCurrentAction = updateCurrentAction;
 
 buildInitialTimeline()
