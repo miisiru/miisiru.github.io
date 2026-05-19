@@ -1388,7 +1388,7 @@ window.openDetailModal = function(idx, charName) {
         { label: "치명타 피해", icon: "IconCriticalDamage.png", base: unit.base_stats.cd, add: unit.base_added_stats.cd, isPercent: true },
         { label: "효과 명중", icon: "IconStatusProbability.png", base: unit.base_stats.ehr, add: unit.base_added_stats.ehr, isPercent: true },
         { label: "효과 저항", icon: "IconStatusResistance.png", base: unit.base_stats.eres, add: unit.base_added_stats.eres, isPercent: true },
-        { label: "격파 특수효과", icon: "IconBreakup.png", base: unit.base_stats.be, add: unit.base_added_stats.be, isPercent: true },
+        { label: "격파 특수효과", icon: "IconBreakUp.png", base: unit.base_stats.be, add: unit.base_added_stats.be, isPercent: true },
         { label: "치유랑 증가", icon: "IconHealRatio.png", base: unit.base_stats.heal_ratio, add: unit.base_added_stats.heal_ratio, isPercent: true },
         { label: "에너지 회복 효율", icon: "IconEnergyRecovery.png", base: unit.base_stats.err, add: unit.base_added_stats.err, isPercent: true },
         { label: `${curElement} 피해 증가`, icon: `Icon${curElement}AddedRatio.png`, base: unit.base_stats.dmg_boost[curElement], add: unit.base_added_stats.dmg_boost[curElement], isPercent: true }
