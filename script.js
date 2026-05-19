@@ -48,6 +48,10 @@ function buildInitialTimeline() {
     });
 
     state.timeline = [];
+
+    state.insertedEvents = []; 
+    state.selectedSubEventId = null;
+
     recalculate();
 }
 
