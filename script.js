@@ -1269,7 +1269,7 @@ window.openDetailModal = function(idx, charName) {
         detailSuperSpan.textContent = "중첩 " + (RomanList[lcDetail.superimposition - 1] || "V");
     }
 
-    document.getElementById('detail-element-icon').src = `./imgs/iconattributemiddle/iconattribute${curElement}.png`;
+    document.getElementById('detail-element-icon').src = `./imgs/iconattributemiddle/IconAttribute${curElement}.png`;
     document.getElementById('detail-path-icon').src = `./imgs/paths/${curPath}.png`;
     document.getElementById('detail-lc-path-icon').src = `./imgs/paths/${curLCPath}.png`;
     document.getElementById('detail-char-name').textContent = charName;
