@@ -1,5 +1,172 @@
 import { currentLcIdx, tempLcData  } from './lc-modal.js';
 import { currentRelicIdx, tempRelicData } from './relic-modal.js'
+import { state } from './script.js';
+import { PRESET_UNITS, availableCharacters } from './char.js';
+
+const spdDiv = document.getElementById('spd-inputs');
+
+// 1. 전역 availableCharacters 또는 PRESET_UNITS 기반으로 캐릭터 선택창 옵션 빌드
+let charOptions = ``;
+if (typeof availableCharacters !== 'undefined' && availableCharacters) {
+    Object.keys(availableCharacters).forEach(id => {
+        charOptions += `<option value="${id}">${availableCharacters[id].name || id}</option>`;
+    });
+} else {
+    // 가드 레레일: 아직 availableCharacters 정의 전일 경우 현재 라인업으로 옵션 제공
+    PRESET_UNITS.forEach(u => {
+        charOptions += `<option value="${u.unit_id}">${u.name}</option>`;
+    });
+}
+
+PRESET_UNITS.forEach((u, i) => {
+    // 💡 [추가] 초기 로드 시점의 광추 및 유물 데이터 유무 검사
+    const initLcId = state.selectedLightCones[i];
+    const initRelic = state.selectedRelics[i];
+    
+    const hasLc = initLcId !== null && initLcId !== undefined && initLcId !== "";
+    const hasRelic = initRelic && ((initRelic.main && initRelic.main.length > 0) || (initRelic.sub && initRelic.sub.length > 0));
+
+    // 광추 UI 스타일 매핑
+    const lcText = hasLc ? "선택됨" : "광추 선택";
+    const lcColor = hasLc ? "var(--success)" : "var(--gold)";
+    const lcBorder = hasLc ? "var(--success)" : "#475569";
+
+    // 유물 UI 스타일 매핑
+    const relicText = hasRelic ? "설정됨" : "유물 설정";
+    const relicColor = hasRelic ? "var(--success)" : "var(--gold)";
+    const relicBorder = hasRelic ? "var(--success)" : "#475569";
+
+    spdDiv.innerHTML += `
+        <div class="char-setting-card" style="padding: 8px 10px; background: var(--card); border: 1px solid #2d3748; border-radius: 6px; box-sizing: border-box; width: 100%;">
+            <div class="char-card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; width: 100%;">
+                
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-start; flex-shrink: 0;">
+                    <img id="char-avatar-${i}" src="./imgs/avatarroundicon/${u.unit_id}.png" style="width: 32px; height: 32px; border-radius: 50%; border: 1px solid #475569; object-fit: contain; flex-shrink: 0;" onerror="this.style.opacity='0.5'">
+                    
+                    <div class="ui-icon-btn" style="border-color: #475569; position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid #475569; background: #1e293b;">
+                        <img src="./imgs/site_ui/char_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
+                        <span style="font-size: 11px; color: var(--text); white-space: nowrap;">변경</span>
+                        <select class="char-dropdown" data-index="${i}" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                            ${charOptions}
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; flex: 1;">
+                    <button type="button" class="ui-icon-btn" style="border-color: ${lcBorder}; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid ${lcBorder}; background: transparent; cursor: pointer;" title="광추 설정" onclick="window.openLightConeModal(${i}, window.PRESET_UNITS[${i}].name)">
+                        <img src="./imgs/site_ui/lc_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
+                        <span class="lc-selected-name" id="lc-label-${i}" style="color: ${lcColor}; font-size: 11px; white-space: nowrap;">${lcText}</span>
+                    </button>
+
+                    <button type="button" class="ui-icon-btn" style="border-color: ${relicBorder}; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid ${relicBorder}; background: transparent; cursor: pointer;" title="유물 관리" onclick="window.openRelicModal(${i}, window.PRESET_UNITS[${i}].name)">
+                        <img src="./imgs/site_ui/relic_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
+                        <span class="lc-selected-name" id="relic-label-${i}" style="color: ${relicColor}; font-size: 11px; white-space: nowrap;">${relicText}</span>
+                    </button>
+                </div>
+                
+            </div>
+            <button type="button" class="main-btn" style="width: 100%; margin: 0; padding: 5px; font-size: 11px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, window.PRESET_UNITS[${i}].name)">자세히 보기</button>
+        </div>`;
+});
+
+document.querySelectorAll('.char-dropdown').forEach(dropdown => {
+    const idx = parseInt(dropdown.getAttribute('data-index'));
+    
+    // 현재 세팅된 프리셋 캐릭터의 unit_id를 select의 기본값으로 동기화
+    if (PRESET_UNITS[idx]) {
+        dropdown.value = PRESET_UNITS[idx].unit_id;
+    }
+
+    dropdown.addEventListener('change', (e) => {
+        const slotIdx = parseInt(e.target.getAttribute('data-index'));
+        const nextCharId = e.target.value;
+
+        if (typeof availableCharacters !== 'undefined' && availableCharacters[nextCharId]) {
+            const newUnit = availableCharacters[nextCharId];
+            
+            // 🎯 1. 캐릭터 본체 데이터 덮어쓰기
+            window.PRESET_UNITS[slotIdx] = newUnit;
+
+            // 🎯 2. 광추 연동 업데이트 (데이터 교체 + UI 초록색 점등)
+            const newLcId = newUnit.lightcone ? newUnit.lightcone.id : "";
+            state.selectedLightCones[slotIdx] = newLcId || null;
+            
+            const lcLabel = document.getElementById(`lc-label-${slotIdx}`);
+            const lcDropdown = document.querySelector(`.lc-dropdown[data-index="${slotIdx}"]`);
+            const lcBtn = lcLabel ? lcLabel.parentElement : null;
+            
+            if (lcDropdown) lcDropdown.value = newLcId; // 드롭다운 내부 값 동기화
+            if (newLcId) {
+                if(lcLabel) { lcLabel.textContent = "선택됨"; lcLabel.style.color = "var(--success)"; }
+                if(lcBtn) lcBtn.style.borderColor = "var(--success)";
+            } else {
+                if(lcLabel) { lcLabel.textContent = "광추 선택"; lcLabel.style.color = "var(--gold)"; }
+                if(lcBtn) lcBtn.style.borderColor = "#475569";
+            }
+
+            // 🎯 3. 유물 연동 업데이트 (원본이 오염되지 않게 깊은 복사 처리)
+            const newRelics = newUnit.relics ? JSON.parse(JSON.stringify(newUnit.relics)) : { main: [], sub: [] };
+            state.selectedRelics[slotIdx] = newRelics;
+            
+            const hasRelic = newRelics && ((newRelics.main && newRelics.main.length > 0) || (newRelics.sub && newRelics.sub.length > 0));
+            const relicLabel = document.getElementById(`relic-label-${slotIdx}`);
+            const relicBtn = relicLabel ? relicLabel.parentElement : null;
+            
+            if (hasRelic) {
+                if(relicLabel) { relicLabel.textContent = "설정됨"; relicLabel.style.color = "var(--success)"; }
+                if(relicBtn) relicBtn.style.borderColor = "var(--success)";
+            } else {
+                if(relicLabel) { relicLabel.textContent = "유물 선택"; relicLabel.style.color = "var(--gold)"; }
+                if(relicBtn) relicBtn.style.borderColor = "#475569";
+            }
+
+        } else {
+            console.warn(`[캐릭터 엔진 가드] availableCharacters 변수 내에 ID ${nextCharId} 데이터가 매핑되어 있지 않습니다.`);
+        }
+
+        // 🎯 4. UI 아바타 소스 즉각 새로고침 스위칭
+        const avatarImg = document.getElementById(`char-avatar-${slotIdx}`);
+        if (avatarImg) {
+            avatarImg.src = `./imgs/avatarroundicon/${nextCharId}.png`;
+        }
+
+        dropdown.blur();
+    });
+});
+
+document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
+    // 💡 1. [방금 추가한 부분] 페이지 로드 시 프리셋 광추 ID가 있다면 드롭다운의 초기값으로 강제 세팅!
+    const initIdx = parseInt(dropdown.getAttribute('data-index'));
+    if (state.selectedLightCones[initIdx]) {
+        dropdown.value = state.selectedLightCones[initIdx];
+    }
+
+    // 💡 2. [기존에 있던 부분] 사용자가 드롭다운 값을 직접 바꿀 때 색상을 바꿔주는 이벤트 리스너
+    dropdown.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.getAttribute('data-index'));
+        const id = e.target.value;
+        state.selectedLightCones[idx] = id || null;
+        
+        const label = document.getElementById(`lc-label-${idx}`);
+        const parentBtn = dropdown.parentElement;
+        
+        if (id) {
+            label.textContent = "선택됨";
+            label.style.color = "var(--success)";
+            if (parentBtn) {
+                parentBtn.style.borderColor = "var(--success)";
+            }
+        } else {
+            label.textContent = "선택";
+            label.style.color = "var(--gold)"; 
+            if (parentBtn) {
+                parentBtn.style.borderColor = "#475569"; 
+                parentBtn.style.outline = "none";
+            }
+        }
+        dropdown.blur();
+    });
+});
 
 // 3. 직접 입력 모달 이벤트 바인딩
 setTimeout(() => {

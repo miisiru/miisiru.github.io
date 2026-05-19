@@ -206,7 +206,7 @@ export class Unit {
         this.element = gameData.characters[this.unit_id].element
         this.rarity = gameData.characters[this.unit_id].rarity
         this.path = gameData.characters[this.unit_id].path
-        this.current_energy = this.max_energy * 0.5
+        this.energy = this.max_energy * 0.5
         this.turn_count = 0
         
         this.lightcone = lightcone ?? new LightCone(getBaseLCId(this.unit_id));
@@ -306,8 +306,6 @@ export class Unit {
             "spd": this.relicStats["SPD"] + this.base_stats.spd * this.relicStats["SPD%"] + this.lcStats["SPD"] + (gameData.characters[this.unit_id].traces["SPD"] ?? 0)
         }
 
-        console.log((this.relicStats["ATK%"] + (gameData.characters[this.unit_id].traces["ATK%"] ?? 0)))
-
         this.spd = this.base_stats.spd + this.base_added_stats.spd
 
         this.current_speed = this.spd; 
@@ -320,7 +318,6 @@ export class Unit {
     adjust_action_guage(advance_ratio, delay_ratio) {
         let current_guage = this.current_action_value * this.current_speed;
         let new_guage = Math.max(0, current_guage - 10000 * (advance_ratio - delay_ratio));
-        console.log(current_guage, new_guage);
         this.current_action_value = Math.max(0, new_guage / this.current_speed);
         return this;
     }

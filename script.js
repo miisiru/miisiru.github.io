@@ -1,6 +1,3 @@
-/**
- * script.js - 선데이 행게증 100% 로직 보완 및 엔진 통합
- */
 import { Unit, fetchStarRailData, LightCone } from './config.js';
 import { PRESET_UNITS, availableCharacters } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
@@ -14,7 +11,8 @@ export let state = {
     selectedIdx: null, 
     selectedPhase: null,
     selectedLightCones: PRESET_UNITS.map(u => u.lightcone ? u.lightcone.id : null),
-    selectedRelics: PRESET_UNITS.map(u => u.relics ? JSON.parse(JSON.stringify(u.relics)) : { main: [], sub: [] })
+    selectedRelics: PRESET_UNITS.map(u => u.relics ? JSON.parse(JSON.stringify(u.relics)) : { main: [], sub: [] }),
+    insertedEvents: []
 };
 
 // 기존에 선언되지 않았다면 state 객체 하위에 레벨/중첩 저장소 동적 할당 보장
@@ -24,184 +22,6 @@ if (!state.lightConeDetails) {
         superimposition: u.lightcone?.superimposition || (gameData.lightCones[u.lightcone?.id]?.rarity === 5 ? 1 : 5)
     }));
 }
-
-const spdDiv = document.getElementById('spd-inputs');
-
-const lightCones = gameData && gameData.lightCones 
-    ? (Array.isArray(gameData.lightCones) ? gameData.lightCones : Object.values(gameData.lightCones)) 
-    : [];
-
-let lcOptions = `<option value="">광추 미선택</option>`;
-lightCones.forEach(lc => {
-    lcOptions += `<option value="${lc.id}">${lc.name}</option>`;
-});
-
-// 1. 전역 availableCharacters 또는 PRESET_UNITS 기반으로 캐릭터 선택창 옵션 빌드
-let charOptions = ``;
-if (typeof availableCharacters !== 'undefined' && availableCharacters) {
-    Object.keys(availableCharacters).forEach(id => {
-        charOptions += `<option value="${id}">${availableCharacters[id].name || id}</option>`;
-    });
-} else {
-    // 가드 레레일: 아직 availableCharacters 정의 전일 경우 현재 라인업으로 옵션 제공
-    PRESET_UNITS.forEach(u => {
-        charOptions += `<option value="${u.unit_id}">${u.name}</option>`;
-    });
-}
-
-PRESET_UNITS.forEach((u, i) => {
-    // 💡 [추가] 초기 로드 시점의 광추 및 유물 데이터 유무 검사
-    const initLcId = state.selectedLightCones[i];
-    const initRelic = state.selectedRelics[i];
-    
-    const hasLc = initLcId !== null && initLcId !== undefined && initLcId !== "";
-    const hasRelic = initRelic && ((initRelic.main && initRelic.main.length > 0) || (initRelic.sub && initRelic.sub.length > 0));
-
-    // 광추 UI 스타일 매핑
-    const lcText = hasLc ? "선택됨" : "광추 선택";
-    const lcColor = hasLc ? "var(--success)" : "var(--gold)";
-    const lcBorder = hasLc ? "var(--success)" : "#475569";
-
-    // 유물 UI 스타일 매핑
-    const relicText = hasRelic ? "설정됨" : "유물 설정";
-    const relicColor = hasRelic ? "var(--success)" : "var(--gold)";
-    const relicBorder = hasRelic ? "var(--success)" : "#475569";
-
-    spdDiv.innerHTML += `
-        <div class="char-setting-card" style="padding: 8px 10px; background: var(--card); border: 1px solid #2d3748; border-radius: 6px; box-sizing: border-box; width: 100%;">
-            <div class="char-card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; width: 100%;">
-                
-                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-start; flex-shrink: 0;">
-                    <img id="char-avatar-${i}" src="./imgs/avatarroundicon/${u.unit_id}.png" style="width: 32px; height: 32px; border-radius: 50%; border: 1px solid #475569; object-fit: contain; flex-shrink: 0;" onerror="this.style.opacity='0.5'">
-                    
-                    <div class="ui-icon-btn" style="border-color: #475569; position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid #475569; background: #1e293b;">
-                        <img src="./imgs/site_ui/char_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
-                        <span style="font-size: 11px; color: var(--text); white-space: nowrap;">변경</span>
-                        <select class="char-dropdown" data-index="${i}" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
-                            ${charOptions}
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; flex: 1;">
-                    <button type="button" class="ui-icon-btn" style="border-color: ${lcBorder}; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid ${lcBorder}; background: transparent; cursor: pointer;" title="광추 설정" onclick="window.openLightConeModal(${i}, window.PRESET_UNITS[${i}].name)">
-                        <img src="./imgs/site_ui/lc_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
-                        <span class="lc-selected-name" id="lc-label-${i}" style="color: ${lcColor}; font-size: 11px; white-space: nowrap;">${lcText}</span>
-                    </button>
-
-                    <button type="button" class="ui-icon-btn" style="border-color: ${relicBorder}; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; border: 1px solid ${relicBorder}; background: transparent; cursor: pointer;" title="유물 관리" onclick="window.openRelicModal(${i}, window.PRESET_UNITS[${i}].name)">
-                        <img src="./imgs/site_ui/relic_icon.png" style="width: 12px; height: 12px; object-fit: contain;">
-                        <span class="lc-selected-name" id="relic-label-${i}" style="color: ${relicColor}; font-size: 11px; white-space: nowrap;">${relicText}</span>
-                    </button>
-                </div>
-                
-            </div>
-            <button type="button" class="main-btn" style="width: 100%; margin: 0; padding: 5px; font-size: 11px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, window.PRESET_UNITS[${i}].name)">자세히 보기</button>
-        </div>`;
-});
-
-document.querySelectorAll('.char-dropdown').forEach(dropdown => {
-    const idx = parseInt(dropdown.getAttribute('data-index'));
-    
-    // 현재 세팅된 프리셋 캐릭터의 unit_id를 select의 기본값으로 동기화
-    if (PRESET_UNITS[idx]) {
-        dropdown.value = PRESET_UNITS[idx].unit_id;
-    }
-
-    dropdown.addEventListener('change', (e) => {
-        const slotIdx = parseInt(e.target.getAttribute('data-index'));
-        const nextCharId = e.target.value;
-
-        if (typeof availableCharacters !== 'undefined' && availableCharacters[nextCharId]) {
-            const newUnit = availableCharacters[nextCharId];
-            
-            // 🎯 1. 캐릭터 본체 데이터 덮어쓰기
-            window.PRESET_UNITS[slotIdx] = newUnit;
-
-            // 🎯 2. 광추 연동 업데이트 (데이터 교체 + UI 초록색 점등)
-            const newLcId = newUnit.lightcone ? newUnit.lightcone.id : "";
-            state.selectedLightCones[slotIdx] = newLcId || null;
-            
-            const lcLabel = document.getElementById(`lc-label-${slotIdx}`);
-            const lcDropdown = document.querySelector(`.lc-dropdown[data-index="${slotIdx}"]`);
-            const lcBtn = lcLabel ? lcLabel.parentElement : null;
-            
-            if (lcDropdown) lcDropdown.value = newLcId; // 드롭다운 내부 값 동기화
-            if (newLcId) {
-                if(lcLabel) { lcLabel.textContent = "선택됨"; lcLabel.style.color = "var(--success)"; }
-                if(lcBtn) lcBtn.style.borderColor = "var(--success)";
-            } else {
-                if(lcLabel) { lcLabel.textContent = "광추 선택"; lcLabel.style.color = "var(--gold)"; }
-                if(lcBtn) lcBtn.style.borderColor = "#475569";
-            }
-
-            // 🎯 3. 유물 연동 업데이트 (원본이 오염되지 않게 깊은 복사 처리)
-            const newRelics = newUnit.relics ? JSON.parse(JSON.stringify(newUnit.relics)) : { main: [], sub: [] };
-            state.selectedRelics[slotIdx] = newRelics;
-            
-            const hasRelic = newRelics && ((newRelics.main && newRelics.main.length > 0) || (newRelics.sub && newRelics.sub.length > 0));
-            const relicLabel = document.getElementById(`relic-label-${slotIdx}`);
-            const relicBtn = relicLabel ? relicLabel.parentElement : null;
-            
-            if (hasRelic) {
-                if(relicLabel) { relicLabel.textContent = "설정됨"; relicLabel.style.color = "var(--success)"; }
-                if(relicBtn) relicBtn.style.borderColor = "var(--success)";
-            } else {
-                if(relicLabel) { relicLabel.textContent = "유물 선택"; relicLabel.style.color = "var(--gold)"; }
-                if(relicBtn) relicBtn.style.borderColor = "#475569";
-            }
-
-        } else {
-            console.warn(`[캐릭터 엔진 가드] availableCharacters 변수 내에 ID ${nextCharId} 데이터가 매핑되어 있지 않습니다.`);
-        }
-
-        // 🎯 4. UI 아바타 소스 즉각 새로고침 스위칭
-        const avatarImg = document.getElementById(`char-avatar-${slotIdx}`);
-        if (avatarImg) {
-            avatarImg.src = `./imgs/avatarroundicon/${nextCharId}.png`;
-        }
-
-        // 잔여 트리거 갱신을 위해 시뮬레이션 타임라인 강제 계산
-        if (typeof resetSimulation === 'function') {
-            resetSimulation();
-        }
-        dropdown.blur();
-    });
-});
-
-document.querySelectorAll('.lc-dropdown').forEach(dropdown => {
-    // 💡 1. [방금 추가한 부분] 페이지 로드 시 프리셋 광추 ID가 있다면 드롭다운의 초기값으로 강제 세팅!
-    const initIdx = parseInt(dropdown.getAttribute('data-index'));
-    if (state.selectedLightCones[initIdx]) {
-        dropdown.value = state.selectedLightCones[initIdx];
-    }
-
-    // 💡 2. [기존에 있던 부분] 사용자가 드롭다운 값을 직접 바꿀 때 색상을 바꿔주는 이벤트 리스너
-    dropdown.addEventListener('change', (e) => {
-        const idx = parseInt(e.target.getAttribute('data-index'));
-        const id = e.target.value;
-        state.selectedLightCones[idx] = id || null;
-        
-        const label = document.getElementById(`lc-label-${idx}`);
-        const parentBtn = dropdown.parentElement;
-        
-        if (id) {
-            label.textContent = "선택됨";
-            label.style.color = "var(--success)";
-            if (parentBtn) {
-                parentBtn.style.borderColor = "var(--success)";
-            }
-        } else {
-            label.textContent = "선택";
-            label.style.color = "var(--gold)"; 
-            if (parentBtn) {
-                parentBtn.style.borderColor = "#475569"; 
-                parentBtn.style.outline = "none";
-            }
-        }
-        dropdown.blur();
-    });
-});
 
 document.getElementById('uid-load-btn').addEventListener('click', loadUserData);
 
@@ -224,7 +44,7 @@ function buildInitialTimeline() {
             relics: assignedRelics
         });
         
-        state.actionPlans[u.unit_id] = Array(100).fill("B"); // 넉넉하게 100턴 계획
+        state.actionPlans[u.unit_id] = Array(100).fill("BASIC"); // 넉넉하게 100턴 계획
         return u;
     });
 
@@ -241,15 +61,13 @@ function recalculate() {
     // 1. 시뮬레이션용 유닛 초기화 (AV 가산점 제거, 순수 AV 사용)
     let simUnits = state.unitData.map((u, i) => {
         let nu = u
-        nu.current_energy = nu.max_energy*0.5; 
+        nu.energy = nu.max_energy*0.5; 
         nu.turnCount = 0; 
         nu.partyIndex = i;        // 파티 순서 (동일 AV 시 2순위)
         nu.lastAdvancedAV = -1;   // 행게증 받은 시점 (동일 AV 시 1순위)
         nu.current_action_value = nu.base_action_value; 
         return nu;
     });
-
-    let existingUlts = state.timeline.filter(a => a.type === 'Ult');
 
     // 2. 메인 시뮬레이션 루프
     while (true) {
@@ -275,36 +93,53 @@ function recalculate() {
         // 행동 시작 시 행게증 우선권 사용 완료 처리
         actor.lastAdvancedAV = -1;
 
-        let actionType = state.actionPlans[actor.unit_id][actor.turnCount] || "B";
+        let actionType = state.actionPlans[actor.unit_id][actor.turnCount] || "BASIC";
         let kit = (actionType === "S") ? actor.kit.skill : actor.kit.basic;
 
+        // 💡 1. 정규 턴 노드 생성
         let record = {
             id: Math.random(),
             unitId: actor.unit_id,
             name: actor.name,
             av: currentAV,
             type: actionType,
+            isTurn: true, // 정규 턴 식별 플래그
+            followUpEvents: { 1: [], 2: [], 3: [], 4: [] }, // 종속 이벤트 보관함
             beforeSp: sp,
             beforeEnergy: actor.energy
         };
 
-        // --- 행동 게이지 조작 (선데이 전스) ---
+        // --- (기존 선데이 행동 게이지 조작 로직은 그대로 유지) ---
         if (actionType === "S" && actor.name === "Sunday") {
             let target = simUnits.find(u => u.name === "Evanescia");
             if (target) {
-                // AV 수치를 선데이와 "완벽히 동일하게" 복사
                 target.current_action_value = currentAV;
-                // 현재 시점을 기록하여 다음 sort 시 최우선권을 갖게 함
                 target.lastAdvancedAV = currentAV; 
             }
         }
 
         // 자원 정산
         sp = Math.min(5, Math.max(0, sp + kit.sp_gain - kit.sp_cost));
-        actor.energy = Math.min(actor.max_energy, actor.energy + kit.energy_gain);
-        
+        actor.energy = Math.min(actor.max_energy, actor.energy + kit.energy_gain - kit.energy_cost);
         record.afterSp = sp;
         record.afterEnergy = actor.energy;
+
+        // 💡 2. 장부(insertedEvents)를 읽어와 이번 턴에 예약된 이벤트 분배
+        let relatedEvents = state.insertedEvents.filter(ev => ev.baseUnitId === actor.unit_id && ev.baseTurnNth === actor.turnCount);
+        
+        relatedEvents.forEach(ev => {
+            let eventActor = simUnits.find(u => u.unit_id === ev.unitId);
+            if (eventActor) eventActor.energy = 5; // 궁극기 소모 후 환급 처리
+            
+            // 독립 카드 생성 따위는 없음! 무조건 부모 카드의 종속 이벤트로 박아 넣습니다.
+            record.followUpEvents[ev.phase].push({
+                type: ev.type,
+                targetUnitId: ev.unitId,
+                value: 0
+            });
+        });
+
+        // 타임라인에는 오직 '정규 턴' 카드만 존재합니다.
         newTimeline.push(record);
 
         // 유닛 상태 업데이트
@@ -314,8 +149,6 @@ function recalculate() {
         if (newTimeline.length > 250) break; 
     }
 
-    // 필살기 난입 및 최종 정렬/렌더링
-    existingUlts.forEach(ult => newTimeline.push(ult));
     state.timeline = newTimeline.sort((a, b) => a.av - b.av);
     render();
 }
@@ -424,6 +257,12 @@ function updateDetail() {
         el.querySelector('.p-effect').innerHTML = `SP: <strong>${s}</strong> | Energy: <strong>${Math.floor(e || 0)}</strong>`;
     };
 
+    const isEvent = action.isTurn === false;
+    document.getElementById('p-turn-start').style.display = isEvent ? 'none' : 'block';
+    document.getElementById('p-turn-end').style.display = isEvent ? 'none' : 'block';
+
+    document.querySelectorAll('.phase-item').forEach(p => p.classList.remove('highlight'));
+
     setP('p-turn-start', action.beforeSp, action.beforeEnergy);
     setP('p-action-start', action.beforeSp, action.beforeEnergy);
     setP('p-action-end', action.afterSp, action.afterEnergy);
@@ -436,6 +275,8 @@ function updateDetail() {
     } else {
         document.querySelectorAll('.phase-item').forEach(p => p.classList.add('highlight'));
     }
+
+    document.getElementById('p-turn-start').style.display = (action.isTurn === false) ? 'none' : '';
 }
 
 function render() {
@@ -443,43 +284,58 @@ function render() {
     list.innerHTML = '';
     
     state.timeline.forEach((item, idx) => {
-        if (!item.followUpEvents) {
-            item.followUpEvents = { 1: [], 2: [], 3: [], 4: [] };
-        }
+        if (!item.followUpEvents) item.followUpEvents = { 1: [], 2: [], 3: [], 4: [] };
 
         const unit = state.unitData.find(u => u.unit_id === item.unitId);
         const actionConfig = (item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
         const isSelected = state.selectedIdx === idx;
         const imagePath = `imgs/avatarshopicon/${item.unitId}.png`;
 
-        // 상하단 정렬을 지탱해 줄 묶음형 래퍼 컨테이너 생성
         const wrapper = document.createElement('div');
         wrapper.className = 'action-card-wrapper';
 
-        // [조건 2] 간소화 상태일 때 Phase 1, 2 이벤트를 메인 카드 '위'에 렌더링
+        // 💡 [핵심] 궁극기를 단독 액션 카드처럼 위장시켜 그려주는 헬퍼 함수
+        const createStandaloneUltCard = (ev) => {
+            const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
+            const imgPath = `imgs/avatarshopicon/${targetUnit.unit_id}.png`;
+            const ultDiv = document.createElement('div');
+            ultDiv.className = 'action-card ult-card';
+            ultDiv.innerHTML = `
+                <div class="card-main-header">
+                    <div class="av-container" data-tooltip="${item.av}"><div class="av-display">${item.av.toFixed(2)}</div></div>
+                    <div class="card-unit-info"><div class="card-action-name" style="color: #d946ef;">[궁극기] ${targetUnit.name}</div></div>
+                </div>
+                <div class="card-bg-image" style="background-image: url('${imgPath}');"></div>
+            `;
+            ultDiv.onclick = () => selectCard(idx); // 이 위장 카드를 눌러도 부모 턴이 확장됨!
+            return ultDiv;
+        };
+
+        // [축소 시] Phase 1, 2 이벤트를 부모 카드 '위'에 렌더링
         if (!isSelected) {
             [1, 2].forEach(pNum => {
                 item.followUpEvents[pNum].forEach(ev => {
-                    const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
-                    let desc = ev.type === 'Ult' ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
-                    const badge = document.createElement('div');
-                    badge.className = 'mini-event-badge above';
-                    badge.textContent = desc;
-                    wrapper.appendChild(badge);
+                    if (ev.type === 'Ult') {
+                        wrapper.appendChild(createStandaloneUltCard(ev)); // 깔끔한 액션 카드로 등장!
+                    } else {
+                        const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
+                        const badge = document.createElement('div');
+                        badge.className = 'mini-event-badge above';
+                        badge.textContent = `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                        wrapper.appendChild(badge);
+                    }
                 });
             });
         }
 
-        // 메인 카드 빌드
+        // --- 부모 턴 메인 카드 빌드 ---
         const div = document.createElement('div');
-        div.className = `action-card ${isSelected ? 'active' : ''} ${item.type === 'Ult' ? 'ult-card' : ''}`;
+        div.className = `action-card ${isSelected ? 'active' : ''}`;
         
         let cardHtml = `
             <div class="card-main-header">
                 <div class="av-container" data-tooltip="${item.av}">
-                    <div class="av-display">
-                        ${item.av.toFixed(2)}
-                    </div>
+                    <div class="av-display">${item.av.toFixed(2)}</div>
                 </div>
                 <div class="card-unit-info">
                     <div class="card-action-name">${actionConfig.name}</div>
@@ -495,7 +351,7 @@ function render() {
             const aE = Math.floor(item.afterEnergy || 0);
 
             cardHtml += `<div class="card-phases-area">`;
-            
+
             [1, 2, 3, 4].forEach(pNum => {
                 const isPSelected = state.selectedPhase === pNum;
                 const pNames = ["", "Turn Start", "Action Start", "Action End", "Turn End"];
@@ -512,11 +368,18 @@ function render() {
                 // 해당 페이즈 아래 추가된 Follow-up 목록 바인딩
                 item.followUpEvents[pNum].forEach((ev, evIdx) => {
                     const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
-                    let desc = ev.type === 'Ult' ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                    const isEvUlt = ev.type === 'Ult';
+                    let desc = isEvUlt ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                    
+                    // 💡 궁극기 전용 CSS 인라인 스타일 추가
+                    const evStyle = isEvUlt ? 'border-left: 3px solid #d946ef; background: #2d1b38;' : '';
+                    const tagColor = isEvUlt ? 'color: #d946ef;' : '';
+                    const descColor = isEvUlt ? 'color: #e879f9; font-weight: bold;' : '';
+
                     cardHtml += `
-                        <div class="card-followup-item-expanded" onclick="event.stopPropagation();">
-                            <span class="followup-tag">↳ Event</span>
-                            <span class="followup-desc">${desc}</span>
+                        <div class="card-followup-item-expanded" style="${evStyle}" onclick="event.stopPropagation();">
+                            <span class="followup-tag" style="${tagColor}">↳ ${isEvUlt ? 'ULT' : 'Event'}</span>
+                            <span class="followup-desc" style="${descColor}">${desc}</span>
                             <span class="followup-del-btn" onclick="window.removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
                         </div>
                     `;
@@ -540,12 +403,15 @@ function render() {
         if (!isSelected) {
             [3, 4].forEach(pNum => {
                 item.followUpEvents[pNum].forEach(ev => {
-                    const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
-                    let desc = ev.type === 'Ult' ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
-                    const badge = document.createElement('div');
-                    badge.className = 'mini-event-badge below';
-                    badge.textContent = desc;
-                    wrapper.appendChild(badge);
+                    if (ev.type === 'Ult') {
+                        wrapper.appendChild(createStandaloneUltCard(ev)); // 깔끔한 액션 카드로 등장!
+                    } else {
+                        const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
+                        const badge = document.createElement('div');
+                        badge.className = 'mini-event-badge below';
+                        badge.textContent = `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                        wrapper.appendChild(badge);
+                    }
                 });
             });
         }
@@ -581,18 +447,23 @@ function confirmUltInsert() {
     const base = state.timeline[state.selectedIdx];
     const uId = parseInt(document.getElementById('ult-unit-select').value);
     const unit = state.unitData.find(u => u.unit_id === uId);
-    let offset = 0;
-    switch(state.selectedPhase) {
-        case 1: offset = -0.0003; break;
-        case 2: offset = -0.0001; break;
-        case 3: offset = 0.0001; break;
-        case 4: offset = 0.0003; break;
-    }
-    const newUlt = { id: Math.random(), unitId: unit.unit_id, name: unit.name, av: base.av + offset, type: 'Ult' };
-    state.timeline.push(newUlt);
+    
+    // base 카드가 해당 캐릭터의 몇 번째 턴인지 추적
+    let nth = state.timeline.filter(a => a.unitId === base.unitId && a.type !== 'Ult').indexOf(base);
+    
+    // 꼼수 AV 조작 대신, 명확한 '이벤트 삽입 계획'을 저장
+    state.insertedEvents.push({
+        id: Math.random(),
+        baseUnitId: base.unitId,
+        baseTurnNth: nth,
+        phase: state.selectedPhase,
+        unitId: unit.unit_id,
+        name: unit.name,
+        type: 'Ult'
+    });
+    
     recalculate();
     document.getElementById('ult-insert-panel').style.display = 'none';
-    state.selectedIdx = state.timeline.findIndex(t => t.id === newUlt.id);
 }
 
 // script.js 맨 하단 관련 코드를 이 코드로 교체하세요
@@ -614,10 +485,6 @@ function applyParsedData(rawData) {
         alert("유효한 스타레일 데이터 구조가 아닙니다. detailInfo 내용을 확인해 주세요.");
         return false;
     }
-
-    console.log("================ [성공] 스타레일 캐릭터 리스트 ================");
-    console.log(avatarList);
-    console.log("=========================================================");
 
     const spdInputs = document.querySelectorAll('.spd-in');
     const maxEInputs = document.querySelectorAll('.max-e-in');
@@ -661,8 +528,6 @@ function applyParsedData(rawData) {
                     label.parentElement.style.borderColor = "var(--success)";
                 }
             }
-            
-            console.log(`[매칭 성공] ${presetUnit.name} -> SPD: ${finalSpd}, MaxEnergy: ${finalMaxE}`);
         } else {
             console.warn(`[매칭 실패] avatarDetailList 내에 ${presetUnit.name} 캐릭터가 없어 기본값을 유지합니다.`);
         }
