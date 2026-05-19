@@ -157,7 +157,7 @@ export function action_value_from_spd(spd) {
 }
 
 export class ActionConfig {
-    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, action_type = ActionType.BASIC, skill_type = SkillType.ATTACK, skill_ability = undefined, ability_values = {aa: 0, ad: 0}}) {
+    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, energy_cost = 0, action_type = ActionType.BASIC, skill_type = SkillType.ATTACK, skill_ability = undefined, ability_values = {aa: 0, ad: 0}}) {
         this.name = name;
         this.sp_cost = sp_cost;
         this.sp_gain = sp_gain;
@@ -166,6 +166,7 @@ export class ActionConfig {
         this.skill_type = skill_type;
         this.skill_ability = skill_ability;
         this.ability_values = ability_values;
+        this.energy_cost = energy_cost;
     }
 
     abilityUse(target) {
@@ -205,6 +206,8 @@ export class Unit {
         this.element = gameData.characters[this.unit_id].element
         this.rarity = gameData.characters[this.unit_id].rarity
         this.path = gameData.characters[this.unit_id].path
+        this.current_energy = this.max_energy * 0.5
+        this.turn_count = 0
         
         this.lightcone = lightcone ?? new LightCone(getBaseLCId(this.unit_id));
         this.relics = relics ?? getBaseRelics(this.unit_id)
@@ -332,7 +335,7 @@ export class Unit {
 
 export async function fetchStarRailData(uid) {
     // 이제 외부 프록시 사이트 대신 내 도메인의 /api/hsr 주소로 바로 요청합니다!
-    const url = `/api/anaxa?uid=${uid}`; 
+    const url = `/api/fetch?uid=${uid}`; 
     
     try {
         const response = await fetch(url);
