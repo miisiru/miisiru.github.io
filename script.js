@@ -841,7 +841,9 @@ function render() {
             }
         }
 
-        cardHtml += `<div class="card-bg-image" style="background-image: url('${imagePath}');"></div>`;
+        if (!isGlobal) {
+            cardHtml += `<div class="card-bg-image" style="background-image: url('${imagePath}');"></div>`;
+        }
         div.innerHTML = cardHtml;
         div.onclick = () => selectCard(idx);
         
