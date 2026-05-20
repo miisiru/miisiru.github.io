@@ -199,7 +199,7 @@ export class UnitKit {
 }
 
 export class Unit {
-    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined}) {
+    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0}) {
         this.unit_id = unit_id;
         this.name = name ?? gameData.characters[this.unit_id].name
         this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
@@ -208,6 +208,7 @@ export class Unit {
         this.path = gameData.characters[this.unit_id].path
         this.energy = this.max_energy * 0.5
         this.turn_count = 0
+        this.eidolon = eidolon
         
         this.lightcone = lightcone ?? new LightCone(getBaseLCId(this.unit_id));
         this.relics = relics ?? getBaseRelics(this.unit_id)
@@ -306,7 +307,22 @@ export class Unit {
             "spd": this.relicStats["SPD"] + this.base_stats.spd * this.relicStats["SPD%"] + this.lcStats["SPD"] + (gameData.characters[this.unit_id].traces["SPD"] ?? 0)
         }
 
-        this.spd = this.base_stats.spd + this.base_added_stats.spd
+        this.spd = spd ?? this.base_stats.spd + this.base_added_stats.spd
+        this.max_hp = this.base_stats.hp + this.base_added_stats.hp
+        this.atk = this.base_stats.atk + this.base_added_stats.atk
+        this.def = this.base_stats.def + this.base_added_stats.def
+        this.cr = this.base_stats.cr + this.base_added_stats.cr
+        this.cd = this.base_stats.cd + this.base_added_stats.cd
+        this.heal_ratio = this.base_stats.heal_ratio + this.base_added_stats.heal_ratio
+        this.ehr = this.base_stats.ehr + this.base_added_stats.ehr
+        this.eres = this.base_stats.eres + this.base_added_stats.eres
+        this.be = this.base_stats.be + this.base_added_stats.be
+        this.err = this.base_stats.err + this.base_added_stats.err
+        this.elation = this.base_stats.elation + this.base_added_stats.elation
+        this.dmg_boost = { ...this.base_stats.dmg_boost }
+        for (const key in this.base_stats.dmg_boost ) {
+            this.dmg_boost[key] = (this.dmg_boost[key] || 0) + this.base_added_stats.dmg_boost[key]
+        }
 
         this.current_speed = this.spd; 
         this.kit = kit;
@@ -327,6 +343,10 @@ export class Unit {
             return this.adjust_action_guage(ability_values.aa || 0, ability_values.ad || 0);
         }
         return this;
+    }
+
+    modifyEnergy(value, modifiedByERR=true) {
+        this.energy = Math.min(this.energy + (modifiedByERR ? 1 : value) * value, this.max_energy);
     }
 }
 

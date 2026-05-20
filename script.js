@@ -62,7 +62,7 @@ function recalculate() {
     
     // 1. 시뮬레이션용 유닛 초기화 (원본 데이터 보호)
     let simUnits = state.unitData.map((u, i) => {
-        let nu = { ...u }; // 얕은 복사
+        let nu = Object.assign(Object.create(Object.getPrototypeOf(u)), u)
         nu.energy = nu.max_energy * 0.5; 
         nu.turnCount = 0; 
         nu.partyIndex = i;        
@@ -74,6 +74,11 @@ function recalculate() {
     // 💡 2. 타임라인 이벤트 큐 생성 (사용자님 아이디어 적용!)
     // 이제 엔진은 캐릭터가 아니라 '이벤트 큐'를 중심으로 돌아갑니다.
     let eventQueue = [];
+
+    eventQueue.push({ eventType: 'GLOBAL_PREP', av: 0, title: '전투 준비', partyIndex: -4 });
+    eventQueue.push({ eventType: 'GLOBAL_SETTING', av: 0, title: '전투 세팅', partyIndex: -3 });
+    eventQueue.push({ eventType: 'GLOBAL_ENTER', av: 0, title: '전투 입장', partyIndex: -2 });
+    eventQueue.push({ eventType: 'GLOBAL_START', av: 0, title: '전투 시작', partyIndex: -1 });
 
     // 최초의 정규 턴들을 큐에 장전
     simUnits.forEach(u => {
@@ -103,6 +108,73 @@ function recalculate() {
         
         if (currentEvent.av > limit) break;
         if (newTimeline.length > 250) break; // 무한 루프 방지용 안전 장치
+
+        // 💡 [변경] 글로벌 이벤트 독립 노드 연산 및 종속 이벤트 자원/시간선 처리
+        if (currentEvent.eventType.startsWith('GLOBAL_')) {
+            let evType = currentEvent.eventType.replace('GLOBAL_', ''); 
+            let eventNode = {
+                id: Math.random(),
+                unitId: 'SYSTEM',
+                name: '시스템',
+                title: currentEvent.title,
+                av: currentEvent.av,
+                type: evType,
+                isTurn: false,
+                followUpEvents: { 1: [], 2: [], 3: [], 4: [] }
+            };
+
+            let relatedEvents = state.insertedEvents.filter(ev => 
+                ev.baseUnitId === 'SYSTEM' && 
+                ev.baseTurnNth === evType
+            );
+
+            relatedEvents.forEach(ev => {
+                let targetUnit = simUnits.find(u => u.unit_id === ev.unitId);
+                
+                if (targetUnit && ev.type === 'Gauge') {
+                    targetUnit.current_action_value = Math.max(0, targetUnit.current_action_value - targetUnit.base_action_value * (ev.value / 100));
+                    targetUnit.lastAdvancedAV = currentEvent.av;
+
+                    let turnEv = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === targetUnit.unit_id && e.turnCount === 0);
+                    if (turnEv) {
+                        turnEv.av = targetUnit.current_action_value;
+                        turnEv.lastAdvancedAV = targetUnit.lastAdvancedAV;
+                    }
+                }
+
+                // ✨ 궁극기 연산 자원 정산
+                let bSp = sp;
+                let bE = targetUnit ? targetUnit.energy : 0;
+                let aSp = sp;
+                let aE = 0;
+
+                if (ev.type === 'Ult' && targetUnit) {
+                    let ultKit = targetUnit.kit.ultimate || targetUnit.kit.ult || { energy_gain: 5, sp_cost: 0, sp_gain: 0, energy_cost: targetUnit.max_energy };
+                    
+                    targetUnit.modifyEnergy(ultKit.energy_gain);
+                    targetUnit.modifyEnergy(-1 * ultKit.energy_cost, false);
+                    
+                    aSp = sp;
+                    aE = targetUnit.energy;
+                }
+
+                eventNode.followUpEvents[1].push({ 
+                    id: ev.id, type: ev.type, targetUnitId: ev.unitId, value: ev.value,
+                    beforeSp: bSp, beforeE: bE, afterSp: aSp, afterE: aE
+                });
+            });
+
+            if (currentEvent.eventType === 'GLOBAL_ENTER') {
+                let sunday = simUnits.find(u => u.name === "Sunday");
+                if (sunday) {
+                    sunday.energy = Math.min(sunday.max_energy, sunday.energy + 25);
+                }
+            }
+
+            // 💡 [해결] 중복 생성되던 pendingUltCards를 지우고, 깔끔하게 시스템 카드 1장만 타임라인에 삽입합니다.
+            newTimeline.push(eventNode);
+            continue; 
+        }
 
         let actor = simUnits.find(u => u.unit_id === currentEvent.unitId);
         if (!actor) continue;
@@ -148,7 +220,8 @@ function recalculate() {
                         
                         // 사용자님이 수정한 로직 적용 (안전성을 위해 fallback 값 추가)
                         sp = Math.min(5, Math.max(0, sp + (ultKit.sp_gain || 0) - (ultKit.sp_cost || 0)));
-                        ultActor.energy = Math.min(ultActor.max_energy, ultActor.energy + (ultKit.energy_gain || 5) - (ultKit.energy_cost || ultActor.max_energy));
+                        ultActor.modifyEnergy(ultKit.energy_gain)
+                        ultActor.modifyEnergy(-1*ultKit.energy_cost, false)
                         
                         aSp = sp;
                         aE = ultActor.energy; // 💡 궁극기 쓴 직후 실제 에너지 저장
@@ -187,7 +260,8 @@ function recalculate() {
             }
 
             sp = Math.min(5, Math.max(0, sp + (kit.sp_gain || 0) - (kit.sp_cost || 0)));
-            actor.energy = Math.min(actor.max_energy, actor.energy + (kit.energy_gain || 0) - (kit.energy_cost || 0));
+            actor.modifyEnergy(kit.energy_gain)
+            actor.modifyEnergy(-1*kit.energy_cost, false)
 
             // ⚡ [Phase 3] 액션 직후 (✨ 메인 행동으로 에너지가 꽉 찬 상태 기록!)
             turnNode.phaseEnterStates[3] = { sp: sp, e: actor.energy };
@@ -293,8 +367,7 @@ function addFollowUpEvent() {
     const value = parseFloat(document.getElementById('event-value-input').value || 0);
     const targetUnit = state.unitData.find(u => u.unit_id === targetUnitId);
 
-    // 현재 선택된 턴이 해당 캐릭터의 몇 번째 턴인지 찾기
-    let nth = state.timeline.filter(a => a.unitId === item.unitId && a.isTurn).indexOf(item);
+    let nth = item.unitId === 'SYSTEM' ? item.type : state.timeline.filter(a => a.unitId === item.unitId && a.isTurn).indexOf(item);
 
     // 💡 화면이 아니라 '장부(insertedEvents)'에 정식으로 예약합니다!
     state.insertedEvents.push({
@@ -316,7 +389,11 @@ function addFollowUpEvent() {
     recalculate(); 
 
     // 타임라인이 새로 짜였으므로 포커스를 다시 찾아줍니다.
-    const newIdx = state.timeline.findIndex(t => t.unitId === backupUnitId && t.av === backupAV && t.isTurn);
+    const newIdx = state.timeline.findIndex(t => 
+        t.unitId === backupUnitId && 
+        t.av === backupAV && 
+        (backupUnitId === 'SYSTEM' ? t.type === backupType : t.isTurn)
+    );
     if (newIdx !== -1) state.selectedIdx = newIdx;
     
     // (render는 recalculate 내부에서 호출되므로 생략)
@@ -327,26 +404,42 @@ function removeFollowUpEvent(cardIdx, phaseNum, eventIdx) {
     if (item && item.followUpEvents && item.followUpEvents[phaseNum]) {
         const targetEv = item.followUpEvents[phaseNum][eventIdx];
         
-        // 장부에서 해당 ID를 찾아 파기합니다.
         const targetIndex = state.insertedEvents.findIndex(e => e.id === targetEv.id);
         if (targetIndex !== -1) {
             state.insertedEvents.splice(targetIndex, 1);
         }
 
-        // 선택된 카드 유지용 백업
         const backupUnitId = item.unitId;
         const backupAV = item.av;
+        const backupType = item.type;
 
-        // 엔진을 다시 돌리면 취소된 내용이 반영(에너지 복구)됩니다.
         recalculate();
 
-        const newIdx = state.timeline.findIndex(t => t.unitId === backupUnitId && t.av === backupAV && t.isTurn);
+        const newIdx = state.timeline.findIndex(t => 
+            t.unitId === backupUnitId && 
+            t.av === backupAV && 
+            (backupUnitId === 'SYSTEM' ? t.type === backupType : t.isTurn)
+        );
         if (newIdx !== -1) state.selectedIdx = newIdx;
     }
 }
 
 function updateDetail() {
+    if (state.selectedIdx === null) return;
     const action = state.timeline[state.selectedIdx];
+    const isGlobal = action.unitId === 'SYSTEM';
+
+    // 💡 시스템 노드 전용 디테일 뷰 분기 마련
+    if (isGlobal) {
+        document.getElementById('focus-name').textContent = "시스템 - " + action.title;
+        document.getElementById('energy-text-val').textContent = `-/-`;
+        document.getElementById('energy-fill').style.width = `0%`;
+        
+        // 4개 페이즈 영역을 숨기거나 비웁니다.
+        document.getElementById('p-turn-start').style.display = 'none';
+        document.getElementById('p-turn-end').style.display = 'none';
+        return;
+    }
     const unit = state.unitData.find(u => u.unit_id === action.unitId);
     const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
 
@@ -396,22 +489,23 @@ function render() {
     state.timeline.forEach((item, idx) => {
         if (!item.followUpEvents) item.followUpEvents = { 1: [], 2: [], 3: [], 4: [] };
 
-        const unit = state.unitData.find(u => u.unit_id === item.unitId);
-        const actionConfig = (item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
+        const isGlobal = item.unitId === 'SYSTEM';
+        const unit = isGlobal ? null : state.unitData.find(u => u.unit_id === item.unitId);
+        const actionConfig = isGlobal ? { name: item.title } : ((item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic));
         const isSelected = state.selectedIdx === idx;
-        const imagePath = `imgs/avatarshopicon/${item.unitId}.png`;
+        const imagePath = isGlobal ? `imgs/avatarshopicon/system.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
 
         const wrapper = document.createElement('div');
         wrapper.className = 'action-card-wrapper';
 
         // 💡 [핵심] 궁극기를 단독 액션 카드처럼 위장시켜 그려주는 헬퍼 함수
-        const createStandaloneUltCard = (ev) => {
+        // 💡 [핵심] 궁극기를 단독 액션 카드처럼 위장시켜 그려주는 헬퍼 함수 (클릭 핸들러 교체)
+        const createStandaloneUltCard = (ev, pNum, evIdx) => {
             const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
             const imgPath = `imgs/avatarshopicon/${targetUnit.unit_id}.png`;
             const ultDiv = document.createElement('div');
-            // CSS에서 기존 테두리를 강제하지 않도록 style로 덮어씁니다.
             ultDiv.className = 'action-card';
-            ultDiv.style.cssText = 'border: 2px solid #0284c7; background: rgba(14, 116, 144, 0.35); box-shadow: 0 0 8px rgba(3, 105, 161, 0.3);';
+            ultDiv.style.cssText = 'border: 2px solid #0284c7; background: rgba(14, 116, 144, 0.35); box-shadow: 0 0 8px rgba(3, 105, 161, 0.3); cursor: pointer;';
             
             ultDiv.innerHTML = `
                 <div class="card-main-header">
@@ -424,21 +518,41 @@ function render() {
                 </div>
                 <div class="card-bg-image" style="background-image: url('${imgPath}'); opacity: 0.85;"></div>
             `;
-            ultDiv.onclick = () => selectCard(idx); 
+            
+            const subEventId = ev.id || `${item.id}_${pNum}_${evIdx}`;
+            
+            ultDiv.onclick = (e) => {
+                e.stopPropagation();
+                if (state.selectedIdx !== idx) {
+                    // 💡 [해결] 부모가 닫혀있다면? 부모부터 열고 -> 해당 페이즈 선택 -> 하위 이벤트까지 원스톱으로 펼침!
+                    state.selectedIdx = idx;
+                    window.selectPhase(pNum); 
+                    state.selectedSubEventId = String(subEventId);
+                } else {
+                    // 이미 부모가 열려있다면 기존처럼 하위 이벤트만 토글
+                    state.selectedSubEventId = state.selectedSubEventId === String(subEventId) ? null : String(subEventId);
+                }
+                window.render();
+            }; 
             return ultDiv;
         };
 
         // [축소 시] Phase 1, 2 이벤트를 부모 카드 '위'에 렌더링
         if (!isSelected) {
             [1, 2].forEach(pNum => {
-                item.followUpEvents[pNum].forEach(ev => {
+                // 💡 [해결] 전투 시작(START)의 이벤트는 카드 '아래'로 보내기 위해 여기서 그리는 것을 스킵합니다!
+                if (isGlobal && item.type === 'START' && pNum === 1) return; 
+
+                item.followUpEvents[pNum].forEach((ev, evIdx) => {
                     if (ev.type === 'Ult') {
-                        wrapper.appendChild(createStandaloneUltCard(ev)); // 깔끔한 액션 카드로 등장!
+                        wrapper.appendChild(createStandaloneUltCard(ev, pNum, evIdx)); 
                     } else {
                         const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
                         const badge = document.createElement('div');
                         badge.className = 'mini-event-badge above';
                         badge.textContent = `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                        // 💡 뱃지를 눌러도 부모 카드가 열리도록 편의성 추가
+                        badge.onclick = (e) => { e.stopPropagation(); window.selectCard(idx); };
                         wrapper.appendChild(badge);
                     }
                 });
@@ -447,95 +561,148 @@ function render() {
 
         // --- 부모 턴 메인 카드 빌드 ---
         const div = document.createElement('div');
-        div.className = `action-card ${isSelected ? 'active' : ''}`;
+        div.className = `action-card ${isSelected ? 'active' : ''} ${isGlobal ? 'system-card' : ''}`;
+        
+        if (isGlobal) {
+            div.style.cssText = 'border: 2px solid #475569; background: rgba(30, 41, 59, 0.45); box-shadow: none;';
+        }
         
         let cardHtml = `
             <div class="card-main-header">
                 <div class="av-container" data-tooltip="${item.av}">
-                    <div class="av-display">${item.av.toFixed(2)}</div>
+                    <div class="av-display" style="${isGlobal ? 'color: #94a3b8;' : ''}">${item.av.toFixed(2)}</div>
                 </div>
                 <div class="card-unit-info">
-                    <div class="card-action-name">${actionConfig.name}</div>
+                    <div class="card-action-name" style="${isGlobal ? 'color: #cbd5e1; font-weight: normal;' : ''}">${actionConfig.name}</div>
                 </div>
             </div>
         `;
 
         // [조건 1] 확장 상태일 때 각 페이즈 및 페이즈 사이에 인라인 리스트로 드로잉
+        // [조건 1] 확장 상태일 때 각 페이즈 및 페이즈 사이에 인라인 리스트로 드로잉
         if (isSelected) {
-            const bSp = item.beforeSp;
-            const bE = Math.floor(item.beforeEnergy || 0);
-            const aSp = item.afterSp;
-            const aE = Math.floor(item.afterEnergy || 0);
-
-            cardHtml += `<div class="card-phases-area">`;
-
-            [1, 2, 3, 4].forEach(pNum => {
-                const isPSelected = state.selectedPhase === pNum;
-                const pNames = ["", "Turn Start", "Action Start", "Action End", "Turn End"];
-                
-                // 💡 1. 뭉뚱그린 결과(afterEnergy) 대신, 해당 페이즈에 '진입할 당시'의 자원을 출력합니다!
-                const pState = item.phaseEnterStates ? item.phaseEnterStates[pNum] : { sp: bSp, e: bE }; 
-                const pEff = `SP: ${pState.sp} | E: ${Math.floor(pState.e)}`;
-
-                cardHtml += `
-                    <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); window.selectPhase(${pNum})">
-                        <span class="card-phase-num">${pNum}</span>
-                        <span class="card-phase-name">${pNames[pNum]}</span>
-                        <span class="card-phase-effect">${pEff}</span>
-                    </div>
-                `;
-
-                // 해당 페이즈 아래 추가된 Follow-up 목록 바인딩
-                item.followUpEvents[pNum].forEach((ev, evIdx) => {
-                    const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
-                    const isEvUlt = ev.type === 'Ult';
-                    
-                    const subEventId = ev.id || `${item.id}_${pNum}_${evIdx}`;
-                    // 💡 2. 숫자/문자열 타입 불일치 버그 해결: String()으로 감싸줍니다.
-                    const isSubSelected = state.selectedSubEventId === String(subEventId);
-
-                    let desc = isEvUlt ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
-                    
-                    const evStyle = isEvUlt ? `border-left: 3px solid #38bdf8; background: rgba(14, 116, 144, 0.35); cursor: pointer; position:relative; ${isSubSelected ? 'border-bottom: 1px dashed rgba(56, 189, 248, 0.5);' : ''}` : '';
-                    const tagColor = isEvUlt ? 'color: #38bdf8;' : '';
-                    const descColor = isEvUlt ? 'color: #7dd3fc; font-weight: bold;' : '';
-
-                    // 1. 이벤트 본문 카드 (클릭 시 자식 페이즈 토글)
+            if (isGlobal) {
+                if (item.type === 'START') {
+                    // (기존 전투 시작 시점 정산 렌더링 코드는 그대로 유지...)
+                    const isPSelected = state.selectedPhase === 1;
+                    cardHtml += `<div class="card-phases-area">`;
                     cardHtml += `
-                        <div class="card-followup-item-expanded" style="${evStyle}" 
-                             onclick="event.stopPropagation(); window.toggleSubEvent('${subEventId}');">
-                            <span class="followup-tag" style="${tagColor}">↳ ${isEvUlt ? 'ULT' : 'Event'}</span>
-                            <span class="followup-desc" style="${descColor}">${desc}</span>
-                            <span class="followup-del-btn" onclick="event.stopPropagation(); window.removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
+                        <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); window.selectPhase(1)">
+                            <span class="card-phase-num">▶</span>
+                            <span class="card-phase-name">전투 시작 시점 정산</span>
+                            <span class="card-phase-effect">광추 패시브 및 행적 효과 등록</span>
                         </div>
                     `;
 
-                    // 2. 💡 [핵심] 궁극기 카드가 클릭되어 활성화(True) 상태라면 하위에 서브 페이즈(Action Start/End) 주입
-                    if (isEvUlt && isSubSelected) {
+                    item.followUpEvents[1].forEach((ev, evIdx) => {
+                        const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
+                        const subEventId = ev.id || `${item.id}_1_${evIdx}`;
+                        const isEvUlt = ev.type === 'Ult';
+                        const isSubSelected = state.selectedSubEventId === String(subEventId); // 💡 타입 동기화 보장
+                        
+                        let desc = isEvUlt ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                        const evStyle = isEvUlt ? `border-left: 3px solid #38bdf8; background: rgba(14, 116, 144, 0.35); cursor: pointer; position:relative; ${isSubSelected ? 'border-bottom: 1px dashed rgba(56, 189, 248, 0.5);' : ''}` : '';
+                        const tagColor = isEvUlt ? 'color: #38bdf8;' : 'color: #94a3b8;';
+                        const descColor = isEvUlt ? 'color: #7dd3fc; font-weight: bold;' : 'color: #cbd5e1;';
+
                         cardHtml += `
-                            <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
-                                <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
-                                    <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
-                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${Math.floor(ev.beforeE || 0)}</span>
-                                </div>
-                                <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
-                                    ${targetUnit.name} 필살기 진행
-                                </div>
-                                <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
-                                    <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
-                                    <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${Math.floor(ev.afterE || 0)}</span>
-                                </div>
+                            <div class="card-followup-item-expanded" style="${evStyle}" 
+                                 onclick="event.stopPropagation(); window.toggleSubEvent('${subEventId}');">
+                                <span class="followup-tag" style="${tagColor}">↳ ${isEvUlt ? 'ULT' : 'Event'}</span>
+                                <span class="followup-desc" style="${descColor}">${desc}</span>
+                                <span class="followup-del-btn" onclick="event.stopPropagation(); window.removeFollowUpEvent(${idx}, 1, ${evIdx})">×</span>
                             </div>
                         `;
+
+                        // ✨ 💡 독립 카드 상태에서 클릭 시 인라인 하위 페이즈(Action Start/End) 표출 완벽 이식!
+                        if (isEvUlt && isSubSelected) {
+                            cardHtml += `
+                                <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
+                                    <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
+                                        <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${Math.floor(ev.beforeE || 0)}</span>
+                                    </div>
+                                    <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
+                                        ${targetUnit.name} 필살기 진행
+                                    </div>
+                                    <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
+                                        <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${Math.floor(ev.afterE || 0)}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+                    cardHtml += `</div>`;
+                } else {
+                    cardHtml += `<div class="card-phases-area" style="padding: 12px; color: #94a3b8; font-size: 11px; text-align: center;">전투 진입 전 단계를 처리하는 독립적인 시스템 이벤트입니다.</div>`;
+                }
+            } else {
+                // (기존 정규 캐릭터 턴 1~4 페이즈 렌더링 코드 그대로 유지...)
+                const bSp = item.beforeSp;
+                const bE = Math.floor(item.beforeEnergy || 0);
+                const aSp = item.afterSp;
+                const aE = Math.floor(item.afterEnergy || 0);
+
+                cardHtml += `<div class="card-phases-area">`;
+                [1, 2, 3, 4].forEach(pNum => {
+                    const isPSelected = state.selectedPhase === pNum;
+                    const pNames = ["", "Turn Start", "Action Start", "Action End", "Turn End"];
+                    const pState = item.phaseEnterStates ? item.phaseEnterStates[pNum] : { sp: bSp, e: bE }; 
+                    const pEff = `SP: ${pState.sp} | E: ${Math.floor(pState.e)}`;
+
+                    cardHtml += `
+                        <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); window.selectPhase(${pNum})">
+                            <span class="card-phase-num">${pNum}</span>
+                            <span class="card-phase-name">${pNames[pNum]}</span>
+                            <span class="card-phase-effect">${pEff}</span>
+                        </div>
+                    `;
+
+                    item.followUpEvents[pNum].forEach((ev, evIdx) => {
+                        const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
+                        const isEvUlt = ev.type === 'Ult';
+                        const subEventId = ev.id || `${item.id}_${pNum}_${evIdx}`;
+                        const isSubSelected = state.selectedSubEventId === String(subEventId);
+
+                        let desc = isEvUlt ? `[궁극기] ${targetUnit.name}` : `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                        const evStyle = isEvUlt ? `border-left: 3px solid #38bdf8; background: rgba(14, 116, 144, 0.35); cursor: pointer; position:relative; ${isSubSelected ? 'border-bottom: 1px dashed rgba(56, 189, 248, 0.5);' : ''}` : '';
+                        const tagColor = isEvUlt ? 'color: #38bdf8;' : 'color: #94a3b8;';
+                        const descColor = isEvUlt ? 'color: #7dd3fc; font-weight: bold;' : 'color: #cbd5e1;';
+
+                        cardHtml += `
+                            <div class="card-followup-item-expanded" style="${evStyle}" onclick="event.stopPropagation(); window.toggleSubEvent('${subEventId}');">
+                                <span class="followup-tag" style="${tagColor}">↳ ${isEvUlt ? 'ULT' : 'Event'}</span>
+                                <span class="followup-desc" style="${descColor}">${desc}</span>
+                                <span class="followup-del-btn" onclick="event.stopPropagation(); window.removeFollowUpEvent(${idx}, ${pNum}, ${evIdx})">×</span>
+                            </div>
+                        `;
+
+                        if (isEvUlt && isSubSelected) {
+                            cardHtml += `
+                                <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
+                                    <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
+                                        <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${Math.floor(ev.beforeE || 0)}</span>
+                                    </div>
+                                    <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
+                                        ${targetUnit.name} 필살기 진행
+                                    </div>
+                                    <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
+                                        <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${Math.floor(ev.afterE || 0)}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+
+                    if (pNum === 2) {
+                        cardHtml += `<div class="card-action-tag-inline">${actionConfig.name} 진행</div>`;
                     }
                 });
-
-                if (pNum === 2) {
-                    cardHtml += `<div class="card-action-tag-inline">${actionConfig.name} 진행</div>`;
-                }
-            });
-
-            cardHtml += `</div>`;
+                cardHtml += `</div>`;
+            }
         }
 
         cardHtml += `<div class="card-bg-image" style="background-image: url('${imagePath}');"></div>`;
@@ -544,17 +711,21 @@ function render() {
         
         wrapper.appendChild(div);
 
-        // [조건 2] 간소화 상태일 때 Phase 3, 4 이벤트를 메인 카드 '아래'에 렌더링
+        // [축소 시] Phase 3, 4 이벤트를 부모 카드 '아래'에 렌더링
         if (!isSelected) {
-            [3, 4].forEach(pNum => {
-                item.followUpEvents[pNum].forEach(ev => {
+            // 💡 [해결] 위에서 스킵했던 전투 시작(START) 노드의 Phase 1을 Phase 3, 4 묶음과 합쳐서 무조건 카드 '아래'에 배치합니다!
+            let bottomPhases = (isGlobal && item.type === 'START') ? [1, 3, 4] : [3, 4];
+
+            bottomPhases.forEach(pNum => {
+                item.followUpEvents[pNum].forEach((ev, evIdx) => {
                     if (ev.type === 'Ult') {
-                        wrapper.appendChild(createStandaloneUltCard(ev)); // 깔끔한 액션 카드로 등장!
+                        wrapper.appendChild(createStandaloneUltCard(ev, pNum, evIdx)); 
                     } else {
                         const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
                         const badge = document.createElement('div');
                         badge.className = 'mini-event-badge below';
                         badge.textContent = `[행게조작] ${targetUnit.name} (${ev.value > 0 ? '+' : ''}${ev.value}%)`;
+                        badge.onclick = (e) => { e.stopPropagation(); window.selectCard(idx); };
                         wrapper.appendChild(badge);
                     }
                 });
@@ -567,12 +738,20 @@ function render() {
     // 포커스 카드 동기화 유지
     if (state.selectedIdx !== null) {
         const action = state.timeline[state.selectedIdx];
-        const unit = state.unitData.find(u => u.unit_id === action.unitId);
-        const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
+        const isGlobal = action.unitId === 'SYSTEM';
+        
+        if (isGlobal) {
+            document.getElementById('focus-name').textContent = "시스템 - " + action.title;
+            document.getElementById('energy-text-val').textContent = `-/-`;
+            document.getElementById('energy-fill').style.width = `0%`;
+        } else {
+            const unit = state.unitData.find(u => u.unit_id === action.unitId);
+            const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
 
-        document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
-        document.getElementById('energy-text-val').textContent = `${Math.floor(action.afterEnergy || 0)}/${unit.max_energy}`;
-        document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
+            document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
+            document.getElementById('energy-text-val').textContent = `${Math.floor(action.afterEnergy || 0)}/${unit.max_energy}`;
+            document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
+        }
     }
 }
 
