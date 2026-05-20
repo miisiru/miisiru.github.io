@@ -15,7 +15,8 @@ export let state = {
     insertedEvents: [],
     selectedSubEventId: null,
     customSpds: PRESET_UNITS.map(() => null),
-    eidolons: PRESET_UNITS.map(() => 0)
+    eidolons: PRESET_UNITS.map(() => 0),
+    rotations: PRESET_UNITS.map(() => ({ initial: [], repeat: ['B'] }))
 };
 
 // 기존에 선언되지 않았다면 state 객체 하위에 레벨/중첩 저장소 동적 할당 보장
@@ -74,8 +75,17 @@ function buildInitialTimeline() {
                 }
             }));
         }
+
+        let plan = [...state.rotations[i].initial];
+        let repeatSeq = [...state.rotations[i].repeat];
         
-        state.actionPlans[u.unit_id] = Array(100).fill("BASIC"); // 넉넉하게 100턴 계획
+        if (repeatSeq.length === 0) repeatSeq = ['B']; // 무한루프 방지용 안전가드
+        
+        while (plan.length < 100) {
+            plan.push(...repeatSeq);
+        }
+        state.actionPlans[u.unit_id] = plan.slice(0, 100);
+        
         return u;
     });
 

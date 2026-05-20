@@ -393,7 +393,8 @@ setTimeout(() => {
     }
 }, 100);
 
-let tempEidolon = 0; 
+let tempEidolon = 0;
+let tempRotationData = { initial: [], repeat: ['B'] };
 
 window.openSettingsModal = function(idx) {
     state.settingsTargetIdx = idx; // 💡 핵심: 현재 조작 중인 캐릭터 인덱스 저장!
@@ -405,7 +406,12 @@ window.openSettingsModal = function(idx) {
     tempEidolon = state.eidolons[idx] || 0; 
     document.getElementById('setting-spd-input').value = state.customSpds[idx] || "";
     
+    // 💡 [추가] 원본 로테이션 데이터를 깊은 복사하여 임시 데이터로 가져옴
+    tempRotationData = JSON.parse(JSON.stringify(state.rotations[idx] || { initial: [], repeat: ['B'] }));
+    
     renderEidolons(unitDef.unit_id);
+    window.renderRotationUI(); // 💡 [추가] 로테이션 뱃지 그리기
+
     document.getElementById('char-settings-modal').style.display = 'flex';
 };
 
@@ -453,7 +459,7 @@ setTimeout(() => {
 
             // 2. 모달에서 조작하던 임시 성혼 값을 state 장부에 기록
             state.eidolons[idx] = tempEidolon;
-
+            state.rotations[idx] = JSON.parse(JSON.stringify(tempRotationData));
             // 3. 데이터 커밋이 끝났으므로 모달 창 닫기
             closeSettings();
             
@@ -464,3 +470,41 @@ setTimeout(() => {
         if (e.target === settingsModal) closeSettings();
     });
 }, 100);
+
+// 💡 [추가] 현재 tempRotationData를 바탕으로 화면에 태그(뱃지)를 그려주는 함수
+window.renderRotationUI = function() {
+    ['initial', 'repeat'].forEach(type => {
+        const container = document.getElementById(`settings-seq-${type}`);
+        if (!container) return;
+        
+        container.innerHTML = '';
+        tempRotationData[type].forEach((act, arrIdx) => {
+            const badge = document.createElement('div');
+            // 전스는 파란색, 평타는 회색 스타일 적용
+            badge.style.cssText = `padding: 2px 6px; font-size: 11px; border-radius: 3px; font-weight: bold; cursor: pointer; transition: 0.2s; 
+                ${act === 'S' ? 'color: #bae6fd; background: rgba(2, 132, 199, 0.4); border: 1px solid #0284c7;' 
+                              : 'color: #cbd5e1; background: #334155; border: 1px solid #475569;'}`;
+            badge.textContent = act === 'S' ? '전스' : '평타';
+            badge.title = "클릭하여 삭제";
+            
+            // 태그 클릭 시 해당 항목 삭제
+            badge.onclick = () => {
+                tempRotationData[type].splice(arrIdx, 1);
+                window.renderRotationUI();
+            };
+            container.appendChild(badge);
+        });
+    });
+};
+
+// 💡 [추가] 버튼 클릭 시 임시 배열에 'S' 또는 'B' 푸시
+window.addTempRotation = function(type, action) {
+    tempRotationData[type].push(action);
+    window.renderRotationUI();
+};
+
+// 💡 [추가] C(Clear) 버튼 클릭 시 임시 배열 싹 비우기
+window.clearTempRotation = function(type) {
+    tempRotationData[type] = [];
+    window.renderRotationUI();
+};

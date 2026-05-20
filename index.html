@@ -195,6 +195,30 @@
                                 </div>
                         </div>
 
+                        <div style="background: #182030; padding: 16px; border-radius: 8px; border: 1px solid #26324d; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: #cbd5e1; font-size: 13px;">행동 로테이션 (Auto)</h4>
+                            
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <div style="font-size: 12px; color: #94a3b8; min-width: 45px;">Initial</div>
+                                <div id="settings-seq-initial" style="display: flex; gap: 4px; min-height: 26px; padding: 4px; background: #0b0f1a; border-radius: 4px; flex-grow: 1; flex-wrap: wrap; border: 1px solid #3b4f76;"></div>
+                                <div style="display: flex; gap: 4px;">
+                                    <button type="button" class="main-btn" style="margin:0; padding:4px 8px; font-size:11px; background:#0284c7; color:white; border:none; border-radius:3px; cursor:pointer;" onclick="addTempRotation('initial', 'S')">전스</button>
+                                    <button type="button" class="main-btn" style="margin:0; padding:4px 8px; font-size:11px; background:#475569; color:white; border:none; border-radius:3px; cursor:pointer;" onclick="addTempRotation('initial', 'B')">평타</button>
+                                    <button type="button" class="main-btn" style="margin:0; padding:4px 8px; font-size:11px; background:#be123c; color:white; border:none; border-radius:3px; cursor:pointer;" onclick="clearTempRotation('initial')">C</button>
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="font-size: 12px; color: #94a3b8; min-width: 45px;">Repeat</div>
+                                <div id="settings-seq-repeat" style="display: flex; gap: 4px; min-height: 26px; padding: 4px; background: #0b0f1a; border-radius: 4px; flex-grow: 1; flex-wrap: wrap; border: 1px solid #3b4f76;"></div>
+                                <div style="display: flex; gap: 4px;">
+                                    <button type="button" class="main-btn" style="margin:0; padding:4px 8px; font-size:11px; background:#0284c7; color:white; border:none; border-radius:3px; cursor:pointer;" onclick="addTempRotation('repeat', 'S')">전스</button>
+                                    <button type="button" class="main-btn" style="margin:0; padding:4px 8px; font-size:11px; background:#475569; color:white; border:none; border-radius:3px; cursor:pointer;" onclick="addTempRotation('repeat', 'B')">평타</button>
+                                    <button type="button" class="main-btn" style="margin:0; padding:4px 8px; font-size:11px; background:#be123c; color:white; border:none; border-radius:3px; cursor:pointer;" onclick="clearTempRotation('repeat')">C</button>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
