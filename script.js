@@ -612,7 +612,7 @@ function render() {
         const unit = isGlobal ? null : state.unitData.find(u => u.unit_id === item.unitId);
         const actionConfig = isGlobal ? { name: item.title } : ((item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic));
         const isSelected = state.selectedIdx === idx;
-        const imagePath = isGlobal ? `imgs/avatarshopicon/9982.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
+        const imagePath = isGlobal ? `imgs/avatarshopicon/1001.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
 
         const wrapper = document.createElement('div');
         wrapper.className = 'action-card-wrapper';
