@@ -185,21 +185,31 @@ export function action_value_from_spd(spd) {
 }
 
 export class ActionConfig {
-    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, energy_cost = 0, action_type = ActionType.BASIC, skill_type = SkillType.ATTACK, skill_ability = undefined, ability_values = {aa: 0, ad: 0}}) {
+    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, energy_cost = 0, action_type, skill_type, abilityUse = null }) {
         this.name = name;
         this.sp_cost = sp_cost;
         this.sp_gain = sp_gain;
         this.energy_gain = energy_gain;
         this.action_type = action_type;
         this.skill_type = skill_type;
-        this.skill_ability = skill_ability;
-        this.ability_values = ability_values;
         this.energy_cost = energy_cost;
+        
+        // 💡 특정 캐릭터만의 고유한 타겟팅 로직이나 특수 기믹을 덮어씌울 수 있도록 콜백 허용
+        this.customAbilityUse = abilityUse; 
     }
 
-    abilityUse(target) {
-        if (!this.skill_ability || !target) return;
-        return target.modification(this.skill_ability, this.ability_values);
+    // 💡 엔진에서 액션 실행 시 직접 호출할 메서드
+    abilityUse(context) {
+        // 커스텀 로직(예: 선데이 전스)이 들어있으면 그것을 실행
+        if (this.customAbilityUse) {
+            return this.customAbilityUse(context);
+        }
+
+        // 커스텀이 없는 일반 공격/스킬이면 원래 사용자님이 구상했던 수정치(modification) 로직 실행
+        if (this.skill_ability && context.target) {
+            // (이 부분은 나중에 타겟팅 시스템이 완성되면 마저 구현하면 됩니다)
+            // return context.target.modification(this.skill_ability, this.ability_values);
+        }
     }
 }
 
@@ -365,10 +375,44 @@ export class Unit {
         this.listeners.push(listener)
     }
 
-    adjust_action_guage(advance_ratio, delay_ratio) {
-        let current_guage = this.current_action_value * this.current_speed;
-        let new_guage = Math.max(0, current_guage - 10000 * (advance_ratio - delay_ratio));
-        this.current_action_value = Math.max(0, new_guage / this.current_speed);
+    /**
+     * 행동 게이지 증/감 구현 (Advance Forward & Action Delay)
+     * @param {number} advance_ratio - 행게증 비율 (예: 100% = 1.0, 25% = 0.25)
+     * @param {number} delay_ratio - 행게감 비율 (예: 20% = 0.2)
+     * @param {number} current_time - 현재 시뮬레이터의 전역 시간 (currentEvent.av)
+     */
+    adjust_action_guage(advance_ratio, delay_ratio, current_time) {
+        // 1. 목표 도착 시간에서 현재 시간을 빼서 '남은 대기 시간(AV)'을 구함
+        let remaining_av = Math.max(0, this.current_action_value - current_time);
+
+        // 2. 남은 시간을 기준으로 현재 잔여 게이지 환산 (Current Gauge = AV * Speed)
+        let current_gauge = remaining_av * this.current_speed;
+
+        // 3. 게이지 증감 연산 (10000 기준)
+        // 행게증은 게이지를 깎고, 행게감은 게이지를 늘립니다.
+        let new_gauge = current_gauge - 10000 * (advance_ratio - delay_ratio);
+
+        // 4. 게이지는 0 밑으로 떨어질 수 없음 (0 = 즉시 턴 획득)
+        new_gauge = Math.max(0, new_gauge);
+
+        // 5. 새 게이지를 다시 절대 시간(도착 예정 AV)으로 변환하여 타임라인에 꽂아줌
+        this.current_action_value = current_time + (new_gauge / this.current_speed);
+
+        return this;
+    }
+
+    /**
+     * 행동 게이지 강제 세팅 (Set Action Gauge)
+     * @param {number} value - 설정할 남은 게이지 값 (보통 0)
+     * @param {number} current_time - 현재 시뮬레이터의 전역 시간 (currentEvent.av)
+     */
+    set_action_guage(value, current_time) {
+        // 강제로 설정할 게이지가 0보다 작을 수 없도록 보정
+        let new_gauge = Math.max(0, value);
+
+        // 새 게이지를 바탕으로 타임라인 상의 목표 도착 시간을 재설정
+        this.current_action_value = current_time + (new_gauge / this.current_speed);
+
         return this;
     }
 

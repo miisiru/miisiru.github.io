@@ -92,6 +92,8 @@ function recalculate() {
     let sp = 3;
     let newTimeline = [];
     let currentEvent = null;
+
+    let queueGlobalCounter = 0;
     
     // 1. 시뮬레이션용 유닛 초기화 (원본 데이터 보호)
     let simUnits = state.unitData.map((u, i) => {
@@ -108,10 +110,10 @@ function recalculate() {
     // 이제 엔진은 캐릭터가 아니라 '이벤트 큐'를 중심으로 돌아갑니다.
     let eventQueue = [];
 
-    eventQueue.push({ eventType: 'GLOBAL_PREP', av: 0, title: '전투 준비', partyIndex: -4 });
-    eventQueue.push({ eventType: 'GLOBAL_SETTING', av: 0, title: '전투 세팅', partyIndex: -3 });
-    eventQueue.push({ eventType: 'GLOBAL_ENTER', av: 0, title: '전투 진입', partyIndex: -2 });
-    eventQueue.push({ eventType: 'GLOBAL_START', av: 0, title: '전투 시작', partyIndex: -1 });
+    eventQueue.push({ eventType: 'GLOBAL_PREP', av: 0, title: '전투 준비', partyIndex: -4, queueId: queueGlobalCounter++ });
+    eventQueue.push({ eventType: 'GLOBAL_SETTING', av: 0, title: '전투 세팅', partyIndex: -3, queueId: queueGlobalCounter++ });
+    eventQueue.push({ eventType: 'GLOBAL_ENTER', av: 0, title: '전투 진입', partyIndex: -2, queueId: queueGlobalCounter++ });
+    eventQueue.push({ eventType: 'GLOBAL_START', av: 0, title: '전투 시작', partyIndex: -1, queueId: queueGlobalCounter++ });
 
     // 최초의 정규 턴들을 큐에 장전
     simUnits.forEach(u => {
@@ -121,7 +123,8 @@ function recalculate() {
             unitId: u.unit_id,
             turnCount: 0,
             lastAdvancedAV: u.lastAdvancedAV,
-            partyIndex: u.partyIndex
+            partyIndex: u.partyIndex,
+            queueId: queueGlobalCounter++ // 💡 먼저 들어온 슬롯이 앞 순번을 가짐
         });
     });
 
@@ -153,16 +156,28 @@ function recalculate() {
     };
 
     // 💡 [추가] 리스너가 엔진의 상태(특히 SP)를 직접 조작할 수 있도록 묶어주는 Context 객체
-    const createContext = (actingUnit, logsArray, extras = {}) => ({
-        get sp() { return sp; }, 
-        set sp(val) { sp = Math.min(5, Math.max(0, val)); }, 
-        simUnits: simUnits,
-        eventQueue: eventQueue,
-        actingUnit: actingUnit, 
-        currentEvent: currentEvent,
-        targetLogsArray: logsArray, // 현재 페이즈의 로그 배열
-        ...extras
-    });
+    const createContext = (actingUnit, logsArray, extras = {}) => {
+        let baseContext = {
+            get sp() { return sp; }, 
+            set sp(val) { sp = Math.min(5, Math.max(0, val)); }, 
+            simUnits: simUnits,
+            eventQueue: eventQueue,
+            actingUnit: actingUnit, 
+            currentEvent: currentEvent,
+            targetLogsArray: logsArray,
+            ...extras
+        };
+
+        // 💡 컨텍스트 객체 자체에 log 메서드를 부착
+        baseContext.log = (msg, sourceName = "행동") => {
+            if (baseContext.targetLogsArray) {
+                // 누가 기록을 남기는지(sourceName) 선택적으로 받을 수 있게 유연성 추가
+                baseContext.targetLogsArray.push({ sourceName: sourceName, message: msg });
+            }
+        };
+
+        return baseContext;
+    };
 
     // 3. 메인 시뮬레이션 루프 (큐에 이벤트가 있는 동안 무한 반복)
     while (eventQueue.length > 0) {
@@ -170,9 +185,12 @@ function recalculate() {
         // [정렬] 큐에 있는 모든 이벤트들을 AV(시간) 순서대로 정렬
         eventQueue.sort((a, b) => {
             if (Math.abs(a.av - b.av) > 1e-9) return a.av - b.av;
-            // AV가 같을 경우 행게증 최신화 및 파티 순서 적용
+            
+            // 행게증/행게감 조작이 직접 개입한 특수 우선권 비교
             if (a.lastAdvancedAV !== b.lastAdvancedAV) return b.lastAdvancedAV - a.lastAdvancedAV;
-            return a.partyIndex - b.partyIndex;
+            
+            // 💡 [핵심] AV가 같으면? 먼저 대기열에 등록되어 기다리던 이벤트(queueId가 작은 것)가 무조건 앞선다!
+            return a.queueId - b.queueId; 
         });
 
         // 가장 먼저 일어날 이벤트를 뽑음
@@ -334,6 +352,10 @@ function recalculate() {
 
                     currentActor.modifyEnergy(-1 * block.kit.energy_cost, false);
                     currentActor.modifyEnergy(block.kit.energy_gain);
+
+                    if (block.kit.abilityUse) {
+                        block.kit.abilityUse(createContext(currentActor, turnNode.listenerLogs[block.phase]));
+                    }
                     
                     let aSp = sp;
                     let aE = currentActor.energy;
@@ -375,7 +397,8 @@ function recalculate() {
                 unitId: actor.unit_id,
                 turnCount: actor.turnCount,
                 lastAdvancedAV: actor.lastAdvancedAV,
-                partyIndex: actor.partyIndex
+                partyIndex: actor.partyIndex,
+                queueId: queueGlobalCounter++ // 💡 후입자이므로 큰 번호를 받아 기존 대기자 뒤로 정렬됨
             });
         }
     }
@@ -579,7 +602,7 @@ function render() {
         const unit = isGlobal ? null : state.unitData.find(u => u.unit_id === item.unitId);
         const actionConfig = isGlobal ? { name: item.title } : ((item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic));
         const isSelected = state.selectedIdx === idx;
-        const imagePath = isGlobal ? `imgs/avatarshopicon/0.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
+        const imagePath = isGlobal ? `imgs/avatarshopicon/9982.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
 
         const wrapper = document.createElement('div');
         wrapper.className = 'action-card-wrapper';

@@ -30,8 +30,26 @@ const sundaykit = new UnitKit(
         energy_gain: 30, 
         action_type: ActionType.SKILL, 
         skill_type: SkillType.SUPPORT, 
-        ability_values: {aa: 1, ad: 0}, // 여기서 객체 형태로 주었기 때문에 위에서 .aa로 받아야 합니다.
-        skill_ability: Ability.ActionGuageModification 
+        abilityUse: (context) => {
+            let target = context.simUnits.find(unit => unit.name === "Evanescia");
+            if (target) {
+                // 1. 에바네시아 게이지 0 강제 세팅 (방금 만든 함수 활용)
+                target.set_action_guage(0, context.currentEvent.av);
+                
+                // 2. 동률 큐 최신화 마커 
+                target.lastAdvancedAV = context.currentEvent.av; 
+                
+                // 3. 큐에서 턴 당겨오기
+                let targetEvent = context.eventQueue.find(e => e.eventType === 'TURN' && e.unitId === target.unit_id);
+                if (targetEvent) {
+                    targetEvent.av = target.current_action_value;
+                    targetEvent.lastAdvancedAV = target.lastAdvancedAV;
+                }
+                
+                // 4. 로그 장부에 기록
+                context.log(`[에바네시아] 즉시 행동 지정`, "선데이 전투 스킬");
+            }
+        }
     }),
     new ActionConfig({ name: "궁", energy_gain: 5, action_type: ActionType.ULT, energy_cost: 130 })
 );
