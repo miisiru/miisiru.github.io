@@ -207,6 +207,29 @@ window.openDetailModal = function(idx, charName) {
             </div>`;
     });
 
+    const eidolonList = document.getElementById('detail-eidolon-list');
+    if (eidolonList) {
+        eidolonList.innerHTML = '';
+        const currentEidolon = state.eidolons[idx] || 0; // 저장된 해당 캐릭터의 성혼 레벨
+        const unitId = window.PRESET_UNITS[idx].unit_id; // 캐릭터 ID
+
+        for (let i = 1; i <= 6; i++) {
+            const div = document.createElement('div');
+            
+            // 💡 기존 세팅 모달에서 쓰던 클래스 재활용 (회색 처리 / 활성화 색상 자동 적용)
+            div.className = `eidolon-item ${i <= currentEidolon ? 'active' : ''}`;
+            div.style.backgroundImage = `url('./imgs/eidolons/${unitId}/${unitId}_Rank_${i}.png')`;
+            
+            // 💡 뷰어 전용 스타일 오버라이드 (클릭 금지 및 마우스 호버 크기 확장 방지)
+            div.style.cursor = 'default';
+            div.style.pointerEvents = 'none'; // 호버 이벤트(transform) 완벽 차단
+            div.style.width = '36px'; // 박스에 맞게 크기 살짝 축소
+            div.style.height = '36px';
+
+            eidolonList.appendChild(div);
+        }
+    }
+
     document.getElementById('detail-modal').style.display = 'flex';
     const scrollBox = document.getElementById('detail-modal-scroll');
     if (scrollBox) {

@@ -1,4 +1,4 @@
-import { Unit, fetchStarRailData, LightCone } from './config.js';
+import { Unit, fetchStarRailData, LightCone, EventHook, EventListener } from './config.js';
 import { PRESET_UNITS, availableCharacters } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
 
@@ -13,7 +13,9 @@ export let state = {
     selectedLightCones: PRESET_UNITS.map(u => u.lightcone ? u.lightcone.id : null),
     selectedRelics: PRESET_UNITS.map(u => u.relics ? JSON.parse(JSON.stringify(u.relics)) : { main: [], sub: [] }),
     insertedEvents: [],
-    selectedSubEventId: null
+    selectedSubEventId: null,
+    customSpds: PRESET_UNITS.map(() => null),
+    eidolons: PRESET_UNITS.map(() => 0)
 };
 
 // 기존에 선언되지 않았다면 state 객체 하위에 레벨/중첩 저장소 동적 할당 보장
@@ -35,13 +37,43 @@ function buildInitialTimeline() {
     state.unitData = PRESET_UNITS.map((p, i) => {
         const assignedLcId = state.selectedLightCones[i];
         const assignedRelics = state.selectedRelics ? state.selectedRelics[i] : null;
+        const assignedCustomSpds = state.customSpds[i]
+        const assignedEidolon = state.eidolons[i]
         
         const u = new Unit({
             unit_id: p.unit_id,
             kit: p.kit,
             lightcone: new LightCone(assignedLcId),
-            relics: assignedRelics
+            relics: assignedRelics,
+            eidolon: assignedEidolon,
+            spd: assignedCustomSpds ?? undefined
         });
+
+        u.registerListener(new EventListener({
+            id: "system_initial_energy",
+            name: "Set Battlestart Energy",
+            hook: EventHook.PREP,
+            priority: -100, // 가장 먼저 정산되도록 낮은 우선순위 부여
+            effect: (context) => {
+                context.caster.energy = context.caster.max_energy * 0.5;
+                context.log(`초기 에너지 50% 세팅 (${context.caster.energy.toFixed(2)})`);
+            }
+        }));
+
+        if (u.name === "Sunday") {
+            u.registerListener(new EventListener({
+                id: "sunday_trace_2",
+                name: "선데이 추가 능력 2", // UI에 표시될 패시브 이름
+                hook: EventHook.ENTER_COMBAT, // 💡 전투 진입 시점으로 수정
+                priority: -80,
+                effect: (context) => {
+                    let bE = context.caster.energy;
+                    context.caster.modifyEnergy(25, true);
+                    // 💡 [추가] 효과가 발동했음을 로그로 남깁니다
+                    context.log(`에너지 회복 (${bE.toFixed(2)} ➔ ${context.caster.energy.toFixed(2)})`);
+                }
+            }));
+        }
         
         state.actionPlans[u.unit_id] = Array(100).fill("BASIC"); // 넉넉하게 100턴 계획
         return u;
@@ -59,11 +91,12 @@ function recalculate() {
     const limit = parseFloat(document.getElementById('limit-av').value) || 500;
     let sp = 3;
     let newTimeline = [];
+    let currentEvent = null;
     
     // 1. 시뮬레이션용 유닛 초기화 (원본 데이터 보호)
     let simUnits = state.unitData.map((u, i) => {
         let nu = Object.assign(Object.create(Object.getPrototypeOf(u)), u)
-        nu.energy = nu.max_energy * 0.5; 
+        nu.energy = 0; 
         nu.turnCount = 0; 
         nu.partyIndex = i;        
         nu.lastAdvancedAV = -1;   
@@ -77,7 +110,7 @@ function recalculate() {
 
     eventQueue.push({ eventType: 'GLOBAL_PREP', av: 0, title: '전투 준비', partyIndex: -4 });
     eventQueue.push({ eventType: 'GLOBAL_SETTING', av: 0, title: '전투 세팅', partyIndex: -3 });
-    eventQueue.push({ eventType: 'GLOBAL_ENTER', av: 0, title: '전투 입장', partyIndex: -2 });
+    eventQueue.push({ eventType: 'GLOBAL_ENTER', av: 0, title: '전투 진입', partyIndex: -2 });
     eventQueue.push({ eventType: 'GLOBAL_START', av: 0, title: '전투 시작', partyIndex: -1 });
 
     // 최초의 정규 턴들을 큐에 장전
@@ -92,6 +125,45 @@ function recalculate() {
         });
     });
 
+    const broadcastEvent = (hook, baseContext) => {
+        let activeListeners = [];
+        simUnits.forEach(unit => {
+            if (!unit.listeners) return;
+            unit.listeners.filter(l => l.hook === hook).forEach(l => {
+                activeListeners.push({ listener: l, caster: unit });
+            });
+        });
+
+        // Priority 오름차순 정렬 (숫자가 낮을수록 먼저 발동)
+        activeListeners.sort((a, b) => a.listener.priority - b.listener.priority);
+        
+        activeListeners.forEach(item => {
+            let context = { 
+                ...baseContext, 
+                caster: item.caster,
+                // 💡 [핵심] 리스너가 context.log()를 호출하면, 현재 장부에 "누가 무엇을 했는지" 기록됩니다.
+                log: (msg) => {
+                    if (baseContext.targetLogsArray) {
+                        baseContext.targetLogsArray.push({ sourceName: item.listener.name, message: msg });
+                    }
+                }
+            };
+            item.listener.execute(context);
+        });
+    };
+
+    // 💡 [추가] 리스너가 엔진의 상태(특히 SP)를 직접 조작할 수 있도록 묶어주는 Context 객체
+    const createContext = (actingUnit, logsArray, extras = {}) => ({
+        get sp() { return sp; }, 
+        set sp(val) { sp = Math.min(5, Math.max(0, val)); }, 
+        simUnits: simUnits,
+        eventQueue: eventQueue,
+        actingUnit: actingUnit, 
+        currentEvent: currentEvent,
+        targetLogsArray: logsArray, // 현재 페이즈의 로그 배열
+        ...extras
+    });
+
     // 3. 메인 시뮬레이션 루프 (큐에 이벤트가 있는 동안 무한 반복)
     while (eventQueue.length > 0) {
         
@@ -104,7 +176,7 @@ function recalculate() {
         });
 
         // 가장 먼저 일어날 이벤트를 뽑음
-        let currentEvent = eventQueue.shift();
+        currentEvent = eventQueue.shift();
         
         if (currentEvent.av > limit) break;
         if (newTimeline.length > 250) break; // 무한 루프 방지용 안전 장치
@@ -120,7 +192,8 @@ function recalculate() {
                 av: currentEvent.av,
                 type: evType,
                 isTurn: false,
-                followUpEvents: { 1: [], 2: [], 3: [], 4: [] }
+                followUpEvents: { 1: [], 2: [], 3: [], 4: [] },
+                listenerLogs: []
             };
 
             let relatedEvents = state.insertedEvents.filter(ev => 
@@ -149,10 +222,10 @@ function recalculate() {
                 let aE = 0;
 
                 if (ev.type === 'Ult' && targetUnit) {
-                    let ultKit = targetUnit.kit.ultimate || targetUnit.kit.ult || { energy_gain: 5, sp_cost: 0, sp_gain: 0, energy_cost: targetUnit.max_energy };
-                    
-                    targetUnit.modifyEnergy(ultKit.energy_gain);
+                    let ultKit = targetUnit.kit.ultimate;
+
                     targetUnit.modifyEnergy(-1 * ultKit.energy_cost, false);
+                    targetUnit.modifyEnergy(ultKit.energy_gain);
                     
                     aSp = sp;
                     aE = targetUnit.energy;
@@ -164,12 +237,10 @@ function recalculate() {
                 });
             });
 
-            if (currentEvent.eventType === 'GLOBAL_ENTER') {
-                let sunday = simUnits.find(u => u.name === "Sunday");
-                if (sunday) {
-                    sunday.energy = Math.min(sunday.max_energy, sunday.energy + 25);
-                }
-            }
+            if (currentEvent.eventType === 'GLOBAL_PREP') broadcastEvent(EventHook.PREP, createContext(null, eventNode.listenerLogs));
+            if (currentEvent.eventType === 'GLOBAL_SETTING') broadcastEvent(EventHook.SETTING, createContext(null, eventNode.listenerLogs));
+            if (currentEvent.eventType === 'GLOBAL_ENTER') broadcastEvent(EventHook.ENTER_COMBAT, createContext(null, eventNode.listenerLogs));
+            if (currentEvent.eventType === 'GLOBAL_START') broadcastEvent(EventHook.BATTLE_START, createContext(null, eventNode.listenerLogs));
 
             // 💡 [해결] 중복 생성되던 pendingUltCards를 지우고, 깔끔하게 시스템 카드 1장만 타임라인에 삽입합니다.
             newTimeline.push(eventNode);
@@ -187,9 +258,8 @@ function recalculate() {
 
             // 정규 턴 계획 읽어오기
             let actionType = state.actionPlans[actor.unit_id][currentEvent.turnCount] || "BASIC";
-            let kit = (actionType === "S") ? actor.kit.skill : actor.kit.basic;
+            let mainKit = (actionType === "S") ? actor.kit.skill : actor.kit.basic;
 
-            // 💡 1. 턴 노드 구조에 phaseEnterStates (페이즈 진입 시점 기록장) 추가
             let turnNode = {
                 id: Math.random(),
                 unitId: actor.unit_id,
@@ -198,78 +268,96 @@ function recalculate() {
                 type: actionType,
                 isTurn: true,
                 followUpEvents: { 1: [], 2: [], 3: [], 4: [] },
-                phaseEnterStates: {}, // ✨ 각 페이즈 진입 순간의 SP/E 기록
+                phaseEnterStates: {},
                 beforeSp: sp,
-                beforeEnergy: actor.energy
+                beforeEnergy: actor.energy,
+                listenerLogs: { 1: [], 2: [], 3: [], 4: [] }, // 💡 페이즈별 기록장
             };
 
             let relatedEvents = state.insertedEvents.filter(ev => ev.baseUnitId === actor.unit_id && ev.baseTurnNth === currentEvent.turnCount);
 
-            const processFollowUp = (ev, phase) => {
-                let bSp = sp;
-                let bE = 0;
-                let aSp = sp;
-                let aE = 0;
+            // 💡 1. 턴을 해체하여 일렬로 늘어놓을 "파이프라인" 배열 생성
+            let pipeline = [];
 
-                if (ev.type === 'Ult') { 
-                    let ultActor = simUnits.find(u => u.unit_id === ev.unitId);
-                    if (ultActor) {
-                        bE = ultActor.energy; // 💡 궁극기 쓰기 직전 실제 에너지 저장
-
-                        let ultKit = ultActor.kit.ultimate || ultActor.kit.ult || { energy_gain: 5, sp_cost: 0, sp_gain: 0, energy_cost: ultActor.max_energy };
-                        
-                        // 사용자님이 수정한 로직 적용 (안전성을 위해 fallback 값 추가)
-                        sp = Math.min(5, Math.max(0, sp + (ultKit.sp_gain || 0) - (ultKit.sp_cost || 0)));
-                        ultActor.modifyEnergy(ultKit.energy_gain)
-                        ultActor.modifyEnergy(-1*ultKit.energy_cost, false)
-                        
-                        aSp = sp;
-                        aE = ultActor.energy; // 💡 궁극기 쓴 직후 실제 에너지 저장
+            // 헬퍼 함수: 특정 페이즈에 예약된 외부 이벤트를 파이프라인에 삽입
+            const injectEvents = (phaseNum) => {
+                relatedEvents.filter(ev => ev.phase === phaseNum).forEach(ev => {
+                    if (ev.type === 'Ult') {
+                        let ultActor = simUnits.find(u => u.unit_id === ev.unitId);
+                        if (ultActor) {
+                            let ultKit = ultActor.kit.ultimate;
+                            // ✨ 핵심: 궁극기도 '하나의 공통 행동(ACTION)' 규격으로 포장합니다.
+                            pipeline.push({ type: 'ACTION', actor: ultActor, kit: ultKit, isMain: false, eventRef: ev, phase: phaseNum });
+                        }
+                    } else {
+                        // 행게 조작 등 기타 시스템 이벤트
+                        pipeline.push({ type: 'EVENT', eventRef: ev, phase: phaseNum });
                     }
-                }
-                
-                // 💡 UI에서 읽어갈 수 있도록 before/after 값을 객체에 같이 넣어서 푸시합니다!
-                turnNode.followUpEvents[phase].push({ 
-                    id: ev.id, type: ev.type, targetUnitId: ev.unitId, value: ev.value,
-                    beforeSp: bSp, beforeE: bE, afterSp: aSp, afterE: aE
                 });
             };
 
-            // ⚡ [Phase 1] 턴 시작 전
-            turnNode.phaseEnterStates[1] = { sp: sp, e: actor.energy };
-            relatedEvents.filter(ev => ev.phase === 1).forEach(ev => processFollowUp(ev, 1));
+            // 💡 2. 레고 조립 (Turn Start -> Action Start -> Main Action -> Action End -> Turn End)
+            pipeline.push({ type: 'CHECKPOINT', phase: 1 });
+            injectEvents(1);
 
-            // ⚡ [Phase 2] 액션 직전 (Phase 1 궁극기 결과 반영됨)
-            turnNode.phaseEnterStates[2] = { sp: sp, e: actor.energy };
-            relatedEvents.filter(ev => ev.phase === 2).forEach(ev => processFollowUp(ev, 2));
+            pipeline.push({ type: 'CHECKPOINT', phase: 2 });
+            injectEvents(2);
 
-            // ==========================================
-            // 🎬 메인 행동 (평타/전스) 연산
-            // ==========================================
-            if (actionType === "S" && actor.name === "Sunday") {
-                let target = simUnits.find(u => u.name === "Evanescia");
-                if (target) {
-                    target.current_action_value = currentEvent.av;
-                    target.lastAdvancedAV = currentEvent.av; 
-                    let targetEvent = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === target.unit_id);
-                    if (targetEvent) {
-                        targetEvent.av = target.current_action_value;
-                        targetEvent.lastAdvancedAV = target.lastAdvancedAV;
+            // ✨ 핵심: 정규 턴 행동 역시 똑같은 '공통 행동(ACTION)' 규격으로 포장합니다.
+            pipeline.push({ type: 'ACTION', actor: actor, kit: mainKit, isMain: true });
+
+            pipeline.push({ type: 'CHECKPOINT', phase: 3 });
+            injectEvents(3);
+
+            pipeline.push({ type: 'CHECKPOINT', phase: 4 });
+            injectEvents(4);
+
+            // 💡 3. 파이프라인 순차 실행 (정규턴/궁극기 구분 없이 공통 ACTION 연산 하나로 통합!)
+            pipeline.forEach(block => {
+                if (block.type === 'CHECKPOINT') {
+                    if (block.phase === 1) broadcastEvent(EventHook.TURN_START, createContext(actor, turnNode.listenerLogs[1]));
+                    if (block.phase === 4) broadcastEvent(EventHook.TURN_END, createContext(actor, turnNode.listenerLogs[4]));
+                    turnNode.phaseEnterStates[block.phase] = { sp: sp, e: actor.energy };
+                } 
+                else if (block.type === 'ACTION') {
+                    let currentActor = block.actor;
+
+                    broadcastEvent(EventHook.ACTION_START, createContext(currentActor, turnNode.listenerLogs[block.phase], {
+                        kit: block.kit, isMain: block.isMain, actionType: block.isMain ? actionType : 'ULT'
+                    }));
+
+                    let bSp = sp;
+                    let bE = currentActor.energy;
+
+                    // [공통 로직] 키트(kit)에 명시된 대로 SP/에너지 정산
+                    sp = Math.min(5, Math.max(0, sp + (block.kit.sp_gain || 0) - (block.kit.sp_cost || 0)));
+
+                    currentActor.modifyEnergy(-1 * block.kit.energy_cost, false);
+                    currentActor.modifyEnergy(block.kit.energy_gain);
+                    
+                    let aSp = sp;
+                    let aE = currentActor.energy;
+
+                    broadcastEvent(EventHook.ACTION_END, createContext(currentActor, turnNode.listenerLogs[block.phase], {
+                        kit: block.kit, isMain: block.isMain, actionType: block.isMain ? actionType : 'ULT'
+                    }));
+
+                    if (!block.isMain) {
+                        // 궁극기인 경우 UI 렌더링을 위해 followUpEvents 장부에만 스펙 기록
+                        turnNode.followUpEvents[block.phase].push({ 
+                            id: block.eventRef.id, type: 'Ult', targetUnitId: currentActor.unit_id, value: block.eventRef.value,
+                            beforeSp: bSp, beforeE: bE, afterSp: aSp, afterE: aE
+                        });
                     }
                 }
-            }
-
-            sp = Math.min(5, Math.max(0, sp + (kit.sp_gain || 0) - (kit.sp_cost || 0)));
-            actor.modifyEnergy(kit.energy_gain)
-            actor.modifyEnergy(-1*kit.energy_cost, false)
-
-            // ⚡ [Phase 3] 액션 직후 (✨ 메인 행동으로 에너지가 꽉 찬 상태 기록!)
-            turnNode.phaseEnterStates[3] = { sp: sp, e: actor.energy };
-            relatedEvents.filter(ev => ev.phase === 3).forEach(ev => processFollowUp(ev, 3));
-
-            // ⚡ [Phase 4] 턴 종료 후
-            turnNode.phaseEnterStates[4] = { sp: sp, e: actor.energy };
-            relatedEvents.filter(ev => ev.phase === 4).forEach(ev => processFollowUp(ev, 4));
+                else if (block.type === 'EVENT') {
+                    // 기타 행게 조작 등의 시스템 이벤트 통과 기록
+                    turnNode.followUpEvents[block.phase].push({ 
+                        id: block.eventRef.id, type: block.eventRef.type, targetUnitId: block.eventRef.unitId, value: block.eventRef.value,
+                        beforeSp: sp, beforeE: 0, afterSp: sp, afterE: 0
+                    });
+                }
+            });
 
             turnNode.afterSp = sp;
             turnNode.afterEnergy = actor.energy;
@@ -277,7 +365,7 @@ function recalculate() {
             // 완성된 행동 노드를 타임라인에 등록
             newTimeline.push(turnNode);
 
-            // 💡 [핵심] 현재 턴이 끝났으므로, 캐릭터의 다음 일정을 계산해 큐(Queue)에 예약합니다.
+            // 💡 4. 다음 턴 계산 후 큐에 다시 예약 (무한 루프 지속)
             actor.turnCount++;
             actor.current_action_value += actor.base_action_value;
 
@@ -429,13 +517,11 @@ function updateDetail() {
     const action = state.timeline[state.selectedIdx];
     const isGlobal = action.unitId === 'SYSTEM';
 
-    // 💡 시스템 노드 전용 디테일 뷰 분기 마련
     if (isGlobal) {
         document.getElementById('focus-name').textContent = "시스템 - " + action.title;
         document.getElementById('energy-text-val').textContent = `-/-`;
         document.getElementById('energy-fill').style.width = `0%`;
         
-        // 4개 페이즈 영역을 숨기거나 비웁니다.
         document.getElementById('p-turn-start').style.display = 'none';
         document.getElementById('p-turn-end').style.display = 'none';
         return;
@@ -443,13 +529,15 @@ function updateDetail() {
     const unit = state.unitData.find(u => u.unit_id === action.unitId);
     const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
 
+    // 💡 메인 프로그레스 바 텍스트 소수점 보정
     document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
-    document.getElementById('energy-text-val').textContent = `${Math.floor(action.afterEnergy || 0)}/${unit.max_energy}`;
+    document.getElementById('energy-text-val').textContent = `${(action.afterEnergy || 0).toFixed(2)}/${unit.max_energy.toFixed(2)}`;
     document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
 
+    // 💡 마이크로 페이즈 진입 자원 상태 텍스트 소수점 보정
     const setP = (id, s, e) => {
         const el = document.getElementById(id);
-        if (el) el.querySelector('.p-effect').innerHTML = `SP: <strong>${s}</strong> | Energy: <strong>${Math.floor(e || 0)}</strong>`;
+        if (el) el.querySelector('.p-effect').innerHTML = `SP: <strong>${s}</strong> | Energy: <strong>${e.toFixed(2)}</strong>`;
     };
 
     const isEvent = action.isTurn === false;
@@ -458,14 +546,12 @@ function updateDetail() {
 
     document.querySelectorAll('.phase-item').forEach(p => p.classList.remove('highlight'));
 
-    // 💡 뭉뚱그린 결과(before/after) 대신, 각 페이즈 진입 시점의 정확한 자원을 출력
     if (action.phaseEnterStates) {
         setP('p-turn-start', action.phaseEnterStates[1].sp, action.phaseEnterStates[1].e);
         setP('p-action-start', action.phaseEnterStates[2].sp, action.phaseEnterStates[2].e);
         setP('p-action-end', action.phaseEnterStates[3].sp, action.phaseEnterStates[3].e);
         setP('p-turn-end', action.phaseEnterStates[4].sp, action.phaseEnterStates[4].e);
     } else {
-        // 혹시라도 예전 데이터 구조가 남아있을 경우를 대비한 백업 로직
         setP('p-turn-start', action.beforeSp, action.beforeEnergy);
         setP('p-action-start', action.beforeSp, action.beforeEnergy);
         setP('p-action-end', action.afterSp, action.afterEnergy);
@@ -493,7 +579,7 @@ function render() {
         const unit = isGlobal ? null : state.unitData.find(u => u.unit_id === item.unitId);
         const actionConfig = isGlobal ? { name: item.title } : ((item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic));
         const isSelected = state.selectedIdx === idx;
-        const imagePath = isGlobal ? `imgs/avatarshopicon/system.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
+        const imagePath = isGlobal ? `imgs/avatarshopicon/0.png` : `imgs/avatarshopicon/${item.unitId}.png`; 
 
         const wrapper = document.createElement('div');
         wrapper.className = 'action-card-wrapper';
@@ -582,6 +668,15 @@ function render() {
         // [조건 1] 확장 상태일 때 각 페이즈 및 페이즈 사이에 인라인 리스트로 드로잉
         if (isSelected) {
             if (isGlobal) {
+                cardHtml += `<div class="card-phases-area">`;
+                
+                // 💡 [추가] 글로벌 노드 펼쳤을 때 패시브 로그 출력
+                if (item.listenerLogs && item.listenerLogs.length > 0) {
+                    item.listenerLogs.forEach(log => {
+                        cardHtml += `<div class="card-action-tag-inline" style="background: rgba(16, 185, 129, 0.15); border-left: 2px solid #10b981; color: #6ee7b7; font-size: 11px; padding: 4px 8px;">✨ ${log.sourceName} <span style="color:#d1fae5">➔ ${log.message}</span></div>`;
+                    });
+                }
+
                 if (item.type === 'START') {
                     // (기존 전투 시작 시점 정산 렌더링 코드는 그대로 유지...)
                     const isPSelected = state.selectedPhase === 1;
@@ -615,19 +710,20 @@ function render() {
                         `;
 
                         // ✨ 💡 독립 카드 상태에서 클릭 시 인라인 하위 페이즈(Action Start/End) 표출 완벽 이식!
+                        // 독립 궁극기 서브 페이즈 인라인 렌더링 수치 보정
                         if (isEvUlt && isSubSelected) {
                             cardHtml += `
                                 <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
                                     <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
                                         <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
-                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${Math.floor(ev.beforeE || 0)}</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${ev.beforeE.toFixed(2)}</span>
                                     </div>
                                     <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
                                         ${targetUnit.name} 필살기 진행
                                     </div>
                                     <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
                                         <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
-                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${Math.floor(ev.afterE || 0)}</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${ev.afterE.toFixed(2)}</span>
                                     </div>
                                 </div>
                             `;
@@ -649,7 +745,7 @@ function render() {
                     const isPSelected = state.selectedPhase === pNum;
                     const pNames = ["", "Turn Start", "Action Start", "Action End", "Turn End"];
                     const pState = item.phaseEnterStates ? item.phaseEnterStates[pNum] : { sp: bSp, e: bE }; 
-                    const pEff = `SP: ${pState.sp} | E: ${Math.floor(pState.e)}`;
+                    const pEff = `SP: ${pState.sp} | E: ${pState.e.toFixed(2)}`; // 💡 .toFixed(2) 보정
 
                     cardHtml += `
                         <div class="card-phase-item ${isPSelected ? 'phase-active' : ''}" onclick="event.stopPropagation(); window.selectPhase(${pNum})">
@@ -658,6 +754,12 @@ function render() {
                             <span class="card-phase-effect">${pEff}</span>
                         </div>
                     `;
+
+                    if (item.listenerLogs && item.listenerLogs[pNum] && item.listenerLogs[pNum].length > 0) {
+                        item.listenerLogs[pNum].forEach(log => {
+                            cardHtml += `<div class="card-action-tag-inline" style="margin: 4px 0 4px 16px; background: rgba(16, 185, 129, 0.15); border-left: 2px solid #10b981; color: #6ee7b7; font-size: 11px; padding: 4px 8px;">✨ [특성 발동] ${log.sourceName}: ${log.message}</div>`;
+                        });
+                    }
 
                     item.followUpEvents[pNum].forEach((ev, evIdx) => {
                         const targetUnit = state.unitData.find(u => u.unit_id === ev.targetUnitId);
@@ -678,19 +780,20 @@ function render() {
                             </div>
                         `;
 
+                        // 독립 궁극기 서브 페이즈 인라인 렌더링 수치 보정
                         if (isEvUlt && isSubSelected) {
                             cardHtml += `
                                 <div class="sub-phase-area" style="background: rgba(15, 23, 42, 0.25); margin: 4px 0 6px 16px; padding: 4px 0 4px 12px; border-left: 2px solid #0284c7; border-radius: 0 4px 4px 0;" onclick="event.stopPropagation();">
                                     <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
                                         <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action Start</span>
-                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${Math.floor(ev.beforeE || 0)}</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.beforeSp} | E: ${ev.beforeE.toFixed(2)}</span>
                                     </div>
                                     <div class="card-action-tag-inline" style="font-size: 11px; margin: 2px 0 2px 8px; color: #bae6fd; background: rgba(3, 105, 161, 0.4); border-left: 2px solid #0284c7; padding-left: 6px;">
                                         ${targetUnit.name} 필살기 진행
                                     </div>
                                     <div class="card-phase-item" style="padding: 4px 8px; font-size: 11px; opacity: 0.9; background: transparent; border: none; display: flex; gap: 6px;">
                                         <span class="card-phase-name" style="color: #38bdf8; font-weight: bold;">Action End</span>
-                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${Math.floor(ev.afterE || 0)}</span>
+                                        <span class="card-phase-effect" style="color: #94a3b8; margin-left: auto;">SP: ${ev.afterSp} | E: ${ev.afterE.toFixed(2)}</span>
                                     </div>
                                 </div>
                             `;
@@ -749,7 +852,7 @@ function render() {
             const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
 
             document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
-            document.getElementById('energy-text-val').textContent = `${Math.floor(action.afterEnergy || 0)}/${unit.max_energy}`;
+            document.getElementById('energy-text-val').textContent = `${(action.afterEnergy || 0).toFixed(2)}/${unit.max_energy.toFixed(2)}`; // 💡 .toFixed(2) 보정
             document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
         }
     }

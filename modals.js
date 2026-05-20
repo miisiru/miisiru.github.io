@@ -65,7 +65,10 @@ PRESET_UNITS.forEach((u, i) => {
                 </div>
                 
             </div>
-            <button type="button" class="main-btn" style="width: 100%; margin: 0; padding: 5px; font-size: 11px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, window.PRESET_UNITS[${i}].name)">자세히 보기</button>
+            <div style="display: flex; gap: 4px; width: 100%; margin-top: auto;">
+                <button type="button" class="main-btn" style="flex: 8; margin: 0; padding: 5px; font-size: 11px; font-weight: bold; background: #1e293b; border: 1px solid #475569;" onclick="window.openDetailModal(${i}, window.PRESET_UNITS[${i}].name)">자세히 보기</button>
+                <button type="button" class="main-btn shadow-gear" style="flex: 2; margin: 0; padding: 5px; font-size: 11px; font-weight: bold; background: #1e293b; border: 1px solid #475569; display: flex; align-items: center; justify-content: center;" title="캐릭터 상세 설정" onclick="window.openSettingsModal(${i})">⚙️ 설정</button>
+            </div>
         </div>`;
 });
 
@@ -278,9 +281,6 @@ setTimeout(() => {
                 }
             }
             
-            if (typeof resetSimulation === 'function') {
-                resetSimulation();
-            }
             console.log(`[유물+세트 저장 완료] 인덱스 ${currentRelicIdx}:`, state.selectedRelics[currentRelicIdx]);
         });
     }
@@ -333,10 +333,6 @@ setTimeout(() => {
                 }
             }
 
-            // 시뮬레이터 연산 엔진 전면 즉시 재시동 트리거
-            if (typeof resetSimulation === 'function') {
-                resetSimulation();
-            }
             console.log(`[광추 저장 완료] 인덱스 ${currentLcIdx}:`, state.lightConeDetails[currentLcIdx]);
         });
     }
@@ -395,4 +391,76 @@ setTimeout(() => {
             settingsPanel.classList.toggle('collapsed');
         });
     }
+}, 100);
+
+let tempEidolon = 0; 
+
+window.openSettingsModal = function(idx) {
+    state.settingsTargetIdx = idx; // 💡 핵심: 현재 조작 중인 캐릭터 인덱스 저장!
+
+    const unitDef = window.PRESET_UNITS[idx];
+    document.getElementById('settings-modal-title').textContent = `${unitDef.name} 상세 설정`;
+    
+    // 💡 기존에 저장된 값이 있으면 불러오고, 없으면 0/빈칸 처리
+    tempEidolon = state.eidolons[idx] || 0; 
+    document.getElementById('setting-spd-input').value = state.customSpds[idx] || "";
+    
+    renderEidolons(unitDef.unit_id);
+    document.getElementById('char-settings-modal').style.display = 'flex';
+};
+
+function renderEidolons(unitId) {
+    const container = document.getElementById('eidolon-container');
+    container.innerHTML = '';
+    
+    for (let i = 1; i <= 6; i++) {
+        const div = document.createElement('div');
+        div.className = `eidolon-item ${i <= tempEidolon ? 'active' : ''}`;
+        div.style.backgroundImage = `url('./imgs/eidolons/${unitId}/${unitId}_Rank_${i}.png')`;
+        
+        div.onclick = () => {
+            // 성혼 연쇄 토글 로직
+            if (i <= tempEidolon) {
+                tempEidolon = i - 1; // 활성화된 걸 누르면 그 뒷단계까지 해제
+            } else {
+                tempEidolon = i;     // 비활성화된 걸 누르면 앞단계까지 연쇄 활성화
+            }
+            renderEidolons(unitId);
+        };
+        container.appendChild(div);
+    }
+}
+
+// 닫기(바깥 배경 및 X 버튼) 및 상단 저장 버튼 UI 인터랙션 리스너 위임
+setTimeout(() => {
+    const settingsModal = document.getElementById('char-settings-modal');
+    const closeSettingsBtn = document.getElementById('close-settings-btn-top');
+    const saveSettingsBtn = document.getElementById('save-settings-btn-top'); // 상단 저장 스위치
+    
+    const closeSettings = () => { if (settingsModal) settingsModal.style.display = 'none'; };
+    
+    if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettings);
+    if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener('click', (e) => {
+            e.preventDefault(); // 💡 혹시 모를 브라우저 폼 제출 등 기본 동작 차단
+
+            const idx = state.settingsTargetIdx;
+            if (idx === null || idx === undefined) return; // 이제 정상 통과됩니다!
+
+            // 1. 입력창의 속도 값을 읽어와서 state 장부에 기록 (비어있으면 null)
+            const spdValue = document.getElementById('setting-spd-input').value.trim();
+            state.customSpds[idx] = spdValue !== "" ? parseFloat(spdValue) : null;
+
+            // 2. 모달에서 조작하던 임시 성혼 값을 state 장부에 기록
+            state.eidolons[idx] = tempEidolon;
+
+            // 3. 데이터 커밋이 끝났으므로 모달 창 닫기
+            closeSettings();
+            
+            console.log(`[캐릭터 설정 저장 완료] 인덱스 ${idx} -> 속도고정: ${state.customSpds[idx]}, 성혼: ${state.eidolons[idx]}돌`);
+        });
+    }
+    if (settingsModal) settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) closeSettings();
+    });
 }, 100);

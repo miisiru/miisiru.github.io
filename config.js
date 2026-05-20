@@ -7,6 +7,34 @@ import { getBaseRelics, Relics } from './relic.js'
 
 export { subStatData, mainStatData, gameData };
 
+export const EventHook = {
+    PREP: 'PREP',
+    SETTING: 'SETTING',
+    ENTER_COMBAT: 'ENTER_COMBAT', // 💡 선데이 특성이 발동할 시점
+    BATTLE_START: 'BATTLE_START',
+    TURN_START: 'TURN_START',
+    ACTION_START: 'ACTION_START',
+    ACTION_END: 'ACTION_END',
+    TURN_END: 'TURN_END'
+};
+export class EventListener {
+    constructor({ id, name, hook, priority = 0, condition, effect }) {
+        this.id = id;               // 특성이나 성혼의 고유 ID
+        this.name = name;           // UI에 표시할 이름 (예: "선데이 추가 능력 2")
+        this.hook = hook;           // 발동 시점 (예: EventHook.BATTLE_START)
+        this.priority = priority;   // 우선순위 (낮을수록 먼저 실행, 예: -80)
+        this.condition = condition; // 발동 조건 함수 (true/false 반환)
+        this.effect = effect;       // 실제 효과를 내는 함수
+    }
+
+    // 조건이 맞을 때만 효과를 실행하는 메서드
+    execute(context) {
+        if (!this.condition || this.condition(context)) {
+            this.effect(context);
+        }
+    }
+}
+
 /**
  * char.js - 캐릭터 및 클래스 데이터 정의
  */
@@ -329,6 +357,12 @@ export class Unit {
         
         this.base_action_value = action_value_from_spd(this.current_speed);
         this.current_action_value = this.base_action_value;
+
+        this.listeners = []
+    }
+
+    registerListener(listener) {
+        this.listeners.push(listener)
     }
 
     adjust_action_guage(advance_ratio, delay_ratio) {
@@ -346,7 +380,7 @@ export class Unit {
     }
 
     modifyEnergy(value, modifiedByERR=true) {
-        this.energy = Math.min(this.energy + (modifiedByERR ? 1 : value) * value, this.max_energy);
+        this.energy = Math.min(this.energy + (modifiedByERR ? this.err : 1) * value, this.max_energy);
     }
 }
 

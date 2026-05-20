@@ -621,3 +621,21 @@ aside.collapsed > *:not(:first-child) {
 .custom-select-options {
     z-index: 999 !important;
 }
+
+.eidolon-item {
+    width: 42px; height: 42px; border-radius: 50%; cursor: pointer;
+    background-size: cover; background-position: center; border: 2px solid #334155;
+    filter: grayscale(100%) brightness(0.5); transition: all 0.2s;
+}
+.eidolon-item.active {
+    filter: grayscale(0%) brightness(1.1); border-color: #38bdf8;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+}
+/* 캐릭터 설정 모달 전용 닫기 버튼 호버 붉은색 트리거 */
+.close-btn-relic-style {
+    transition: color 0.2s;
+}
+
+.close-btn-relic-style:hover {
+    color: #ef4444 !important;
+}
