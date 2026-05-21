@@ -237,7 +237,7 @@ export class UnitKit {
 }
 
 export class Unit {
-    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0}) {
+    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0, rotation={initial: [], repeat: ['B']}}) {
         this.unit_id = unit_id;
         this.name = name ?? gameData.characters[this.unit_id].name
         this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
@@ -369,6 +369,8 @@ export class Unit {
         this.current_action_value = this.base_action_value;
 
         this.listeners = []
+
+        this.rotation = rotation
     }
 
     registerListener(listener) {
@@ -442,5 +444,118 @@ export async function fetchStarRailData(uid) {
     } catch (error) {
         console.error(error);
         alert(error)
+    }
+}
+
+// 💡 [추가] 전투 스킬 포인트(SP) 상태를 정밀 제어하는 매니저
+export class SkillPointManager {
+constructor(initial = 3, max = 5, min = 0) {
+    this.current = initial;
+    this.max = max;
+    this.min = min;
+}
+
+modify(amount, contextLogs = null) {
+    const before = this.current;
+    this.current = Math.min(this.max, Math.max(this.min, this.current + amount));
+    
+    if (contextLogs && before !== this.current) {
+        const diff = this.current - before;
+        contextLogs.push({ 
+            sourceName: "SP 변동", 
+            message: `SP: ${before} ➔ ${this.current} (${diff > 0 ? '+' : ''}${diff})` 
+        });
+    }
+    return this.current;
+}
+
+// 향후 스파클 등 최대 SP 확장 기믹 지원용
+setMaxSP(newMax) {
+    this.max = newMax;
+}
+}
+
+// 💡 [추가] 에너지 충전 시스템 파이프라인 (ERR 효율 계산 통합)
+export function chargeUnitEnergy(unit, baseAmount, reason, context = null, applyErr = true) {
+    // 💡 applyErr가 true일 때만 ERR을 곱하고, false면 기초 회복량을 그대로 사용
+    const errRate = applyErr ? (unit.err || 1.0) : 1.0; 
+    const actualGain = baseAmount * errRate;
+    
+    const beforeEnergy = unit.energy || 0;
+    unit.energy = Math.min(unit.max_energy, beforeEnergy + actualGain);
+
+    if (context && context.targetLogsArray) {
+        let msg = `${unit.name} [${reason}]: +${actualGain.toFixed(2)} 충전`;
+        // ERR가 적용되었을 때만 상세 계산식을 로그에 포함
+        if (applyErr) {
+            msg += ` (기초 ${baseAmount} * ERR ${(errRate * 100).toFixed(1)}%)`;
+        } else {
+            msg += ` (고정값)`;
+        }
+        
+        context.targetLogsArray.push({
+            sourceName: "에너지 회복",
+            message: msg
+        });
+    }
+}
+
+export class Modifier {
+    constructor(config) {
+        this.id = config.id || Math.random().toString(36).substring(2, 11);
+        this.name = config.name;
+        this.type = config.type || 'BUFF';
+        this.stats = config.stats || {};
+        this.duration = config.duration || 1;
+        this.sourceId = config.sourceId || 'SYSTEM';
+        this.tickOn = config.tickOn || 'TURN_END';
+    }
+}
+
+export class ModifierManager {
+    constructor(unit) {
+        this.unit = unit;
+        this.list = [];
+    }
+
+    add(modifierConfig, contextLogs = null) {
+        const existing = this.list.find(m => m.id === modifierConfig.id);
+        if (existing) {
+            existing.duration = Math.max(existing.duration, modifierConfig.duration || 1);
+            if (contextLogs) {
+                contextLogs.push({ sourceName: "상태 갱신", message: `[${existing.name}] 지속 시간 갱신` });
+            }
+        } else {
+            this.list.push(new Modifier(modifierConfig));
+            if (contextLogs) {
+                contextLogs.push({ sourceName: "상태 부여", message: `[${modifierConfig.name}] 부여됨 (${modifierConfig.duration}턴)` });
+            }
+        }
+    }
+
+    remove(id, contextLogs = null) {
+        const index = this.list.findIndex(m => m.id === id);
+        if (index !== -1) {
+            const removed = this.list.splice(index, 1)[0];
+            if (contextLogs) {
+                contextLogs.push({ sourceName: "상태 종료", message: `[${removed.name}] 해제됨` });
+            }
+        }
+    }
+
+    tick(tickEvent, contextLogs = null) {
+        for (let i = this.list.length - 1; i >= 0; i--) {
+            const mod = this.list[i];
+            if (mod.tickOn === tickEvent) {
+                mod.duration -= 1;
+                if (mod.duration <= 0) {
+                    this.remove(mod.id, contextLogs);
+                }
+            }
+        }
+    }
+
+    getStat(statKey) {
+        return this.list.reduce((sum, mod) => sum + (mod.stats[statKey] || 0), 0);
     }
 }
