@@ -3,6 +3,38 @@ import { PRESET_UNITS, availableCharacters } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
 import { LightCone } from './lc.js'
 import { Unit } from './character.js'
+import * as Relics from './relics/index.js';
+
+function getRelicAbilities(relicsData) {
+    if (!relicsData || !relicsData.sets) return [];
+    
+    let listeners = [];
+    
+    // 🎯 깔끔해진 딕셔너리 매핑
+    const idMap = {
+        '317_planar2': Relics.planar317,
+        '121_outer4': Relics.relic121
+    };
+
+    const setTypes = ['outer2', 'outer4', 'planar2'];
+    const isMixedSet = relicsData.sets.outer2 !== relicsData.sets.outer4;
+
+    setTypes.forEach(type => {
+        const targetTypeKey = (type === 'outer4' && isMixedSet) ? 'outer2' : type;
+        const setId = String(relicsData.sets[targetTypeKey]);
+        
+        if (setId && setId !== '0' && setId !== 'undefined') {
+            const key = `${setId}_${type}`;
+            
+            if (idMap[key]) {
+                // 배열 형태이므로 스프레드 연산자(...)로 풀어 넣기
+                listeners.push(...idMap[key]);
+            }
+        }
+    });
+
+    return listeners;
+}
 
 window.PRESET_UNITS = PRESET_UNITS;
 
@@ -74,6 +106,11 @@ function buildInitialTimeline() {
 
         if (p.lightcone && Array.isArray(p.lightcone.ability)) {
             p.lightcone.ability.forEach(l => u.registerListener(l));
+        }
+
+        if (assignedRelics) {
+            const relicListeners = getRelicAbilities(assignedRelics);
+            relicListeners.forEach(l => u.registerListener(l));
         }
 
         let plan = [...state.rotations[i].initial];
@@ -397,11 +434,11 @@ function recalculate() {
                 if (block.type === 'CHECKPOINT') {
                     // 💡 [수정] 추가 턴(Extra Turn)이 아닐 때만 턴 시작/종료 정산을 돌립니다.
                     if (block.phase === 1 && !turnNode.isExtraTurn) {
-                        actor.modifiers.tick('TURN_START', turnNode.listenerLogs[1]);
+                        simUnits.forEach(u => u.modifiers.tick('TURN_START', actor.unit_id, turnNode.listenerLogs[1]));
                         broadcastEvent(EventHook.TURN_START, createContext(actor, turnNode.listenerLogs[1]));
                     }
                     if (block.phase === 4 && !turnNode.isExtraTurn) {
-                        actor.modifiers.tick('TURN_END', turnNode.listenerLogs[4]);
+                        simUnits.forEach(u => u.modifiers.tick('TURN_END', actor.unit_id, turnNode.listenerLogs[4]));
                         broadcastEvent(EventHook.TURN_END, createContext(actor, turnNode.listenerLogs[4]));
                     }
                     turnNode.phaseEnterStates[block.phase] = { sp: spManager.current, e: actor.energy };

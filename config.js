@@ -134,10 +134,11 @@ export function chargeUnitEnergy(unit, baseAmount, reason, context = null, apply
     
     const beforeEnergy = unit.energy || 0;
     unit.energy = Math.min(unit.max_energy, beforeEnergy + actualGain);
+    const afterEnergy = unit.energy;
 
     if (context && context.targetLogsArray) {
-        let msg = `${unit.name} [${reason}]: +${actualGain.toFixed(2)} 충전`;
-        // ERR가 적용되었을 때만 상세 계산식을 로그에 포함
+        let msg = `${unit.name} [${reason}]: +${actualGain.toFixed(2)} 충전 `;
+        msg += `(${beforeEnergy.toFixed(2)} ➔ ${afterEnergy.toFixed(2)})`;
         if (applyErr) {
             msg += ` (기초 ${baseAmount} * ERR ${(errRate * 100).toFixed(1)}%)`;
         } else {
@@ -160,11 +161,12 @@ export class Modifier {
         this.duration = config.duration || 1;
         this.sourceId = config.sourceId || 'SYSTEM';
         this.tickOn = config.tickOn || 'TURN_END';
-
-        this.requireTurnStart = config.requireTurnStart !== false; 
         
-        // 💡 [기억 장치] 자신이 TURN_START를 목격했는지 기록하는 플래그
-        this.hasSeenTurnStart = false;
+        // 💡 [신규] 누구의 턴에 차감할 것인가? (입력이 없으면 무조건 장착자 본인 'self'로 설정)
+        this.tickSource = config.tickSource || 'self'; 
+        
+        this.requireTurnStart = config.requireTurnStart !== false; 
+        this.hasSeenTurnStart = false; 
 
         if (typeof config.onRemove === 'function') {
             this.onRemove = config.onRemove;
@@ -187,10 +189,7 @@ export class ModifierManager {
         const existing = this.list.find(m => m.id === modifierConfig.id);
         if (existing) {
             existing.duration = Math.max(existing.duration, duration);
-            
-            // 💡 [핵심] 버프가 갱신(리필)되었다면, 방금 새로 받은 것과 같으므로 목격 기록을 리셋합니다!
-            // 이렇게 해야 내 턴 중에 궁을 써서 버프를 리필했을 때도 1턴 연장 혜택을 똑같이 받습니다.
-            existing.hasSeenTurnStart = false; 
+            existing.hasSeenTurnStart = false; // 갱신 시 버프 연장 혜택 초기화
             
             if (contextLogs) {
                 const logDuration = existing.duration === Infinity ? "무한" : `${existing.duration}턴`;
@@ -223,22 +222,32 @@ export class ModifierManager {
         }
     }
 
-    tick(tickEvent, contextLogs = null) {
+    // 💡 [핵심] 현재 누구의 턴인지(actingUnitId)를 인수로 받습니다.
+    // 인수를 아예 안 넣으면 자동으로 장착자 본인의 ID를 넣으므로 기존 코드에 전혀 에러가 나지 않습니다.
+    tick(tickEvent, actingUnitId = this.unit.unit_id, contextLogs = null) {
         for (let i = this.list.length - 1; i >= 0; i--) {
             const mod = this.list[i];
             
             if (mod.duration === Infinity) continue;
 
-            // 💡 1. 턴 시작 페이즈(TURN_START)가 지나가면, 내 몸에 있는 모든 버프들이 이를 목격했다고 기록합니다.
+            // 💡 [신규] 차감 주체(tickSource) 검증
+            // tickSource가 'self'라면 장착자 본인(this.unit.unit_id)의 턴인지 확인합니다.
+            // 특정 ID(선데이 등)가 지정되었다면, 이번 턴의 주인(actingUnitId)이 그 사람일 때만 작동합니다.
+            const expectedTickSource = mod.tickSource === 'self' ? this.unit.unit_id : mod.tickSource;
+            
+            // 차감 주체가 아니라면 이번 틱 연산은 완전히 무시합니다! (남의 턴에는 안 깎임)
+            if (expectedTickSource !== actingUnitId) continue;
+
             if (tickEvent === 'TURN_START') {
                 mod.hasSeenTurnStart = true;
             }
 
             if (mod.tickOn === tickEvent) {
-                // 💡 2. 턴 종료(TURN_END) 차감 로직에 방어막(Shield)을 전개합니다.
-                // 턴 종료 차감형 버프인데, TURN_START를 못 봤고(이번 턴 중에 얻음), 면제 권한(requireTurnStart)이 있다면?
                 if (tickEvent === 'TURN_END' && mod.requireTurnStart && !mod.hasSeenTurnStart) {
-                    continue; // 차감 생략! (버프 연장 테크닉 발동)
+                    if (contextLogs) {
+                        contextLogs.push({ sourceName: "상태 유지", message: `[${mod.name}] 이번 턴 내에 획득/갱신되어 기간 유지 🛡️` });
+                    }
+                    continue; 
                 }
 
                 mod.duration -= 1;
@@ -250,7 +259,6 @@ export class ModifierManager {
                 if (mod.duration <= 0) {
                     this.remove(mod.id, contextLogs);
                 } else {
-                    // 💡 3. 차감이 무사히 끝났다면, 다음 턴 사이클을 위해 목격 기록을 다시 지워줍니다.
                     if (tickEvent === 'TURN_END') {
                         mod.hasSeenTurnStart = false;
                     }
