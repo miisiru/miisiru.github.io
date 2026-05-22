@@ -161,6 +161,11 @@ export class Modifier {
         this.sourceId = config.sourceId || 'SYSTEM';
         this.tickOn = config.tickOn || 'TURN_END';
 
+        this.requireTurnStart = config.requireTurnStart !== false; 
+        
+        // 💡 [기억 장치] 자신이 TURN_START를 목격했는지 기록하는 플래그
+        this.hasSeenTurnStart = false;
+
         if (typeof config.onRemove === 'function') {
             this.onRemove = config.onRemove;
         }
@@ -182,6 +187,11 @@ export class ModifierManager {
         const existing = this.list.find(m => m.id === modifierConfig.id);
         if (existing) {
             existing.duration = Math.max(existing.duration, duration);
+            
+            // 💡 [핵심] 버프가 갱신(리필)되었다면, 방금 새로 받은 것과 같으므로 목격 기록을 리셋합니다!
+            // 이렇게 해야 내 턴 중에 궁을 써서 버프를 리필했을 때도 1턴 연장 혜택을 똑같이 받습니다.
+            existing.hasSeenTurnStart = false; 
+            
             if (contextLogs) {
                 const logDuration = existing.duration === Infinity ? "무한" : `${existing.duration}턴`;
                 contextLogs.push({ sourceName: "상태 갱신", message: `[${existing.name}] 지속 시간 갱신 (${logDuration})` });
@@ -207,8 +217,6 @@ export class ModifierManager {
             if (contextLogs) {
                 contextLogs.push({ sourceName: "상태 종료", message: `[${removed.name}] 해제됨 ❌` });
             }
-
-            // 💡 4. [핵심] 버프가 삭제될 때 객체 내부에 원작 연쇄 트리거(onRemove)가 있다면 가차없이 실행!
             if (typeof removed.onRemove === 'function') {
                 removed.onRemove(contextLogs);
             }
@@ -219,10 +227,20 @@ export class ModifierManager {
         for (let i = this.list.length - 1; i >= 0; i--) {
             const mod = this.list[i];
             
-            // 💡 5. 무한 지속(Infinity) 버프는 턴 차감 연산(tick)을 완전히 스킵하도록 우회
             if (mod.duration === Infinity) continue;
 
+            // 💡 1. 턴 시작 페이즈(TURN_START)가 지나가면, 내 몸에 있는 모든 버프들이 이를 목격했다고 기록합니다.
+            if (tickEvent === 'TURN_START') {
+                mod.hasSeenTurnStart = true;
+            }
+
             if (mod.tickOn === tickEvent) {
+                // 💡 2. 턴 종료(TURN_END) 차감 로직에 방어막(Shield)을 전개합니다.
+                // 턴 종료 차감형 버프인데, TURN_START를 못 봤고(이번 턴 중에 얻음), 면제 권한(requireTurnStart)이 있다면?
+                if (tickEvent === 'TURN_END' && mod.requireTurnStart && !mod.hasSeenTurnStart) {
+                    continue; // 차감 생략! (버프 연장 테크닉 발동)
+                }
+
                 mod.duration -= 1;
                 
                 if (mod.duration > 0 && contextLogs) {
@@ -231,6 +249,11 @@ export class ModifierManager {
                 
                 if (mod.duration <= 0) {
                     this.remove(mod.id, contextLogs);
+                } else {
+                    // 💡 3. 차감이 무사히 끝났다면, 다음 턴 사이클을 위해 목격 기록을 다시 지워줍니다.
+                    if (tickEvent === 'TURN_END') {
+                        mod.hasSeenTurnStart = false;
+                    }
                 }
             }
         }

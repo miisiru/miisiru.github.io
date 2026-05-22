@@ -188,21 +188,22 @@ function recalculate() {
             // ✨ [아키텍처 확장] 행게 조작을 엔진이 직접 통제하는 전용 API
             advanceActionGauge: (targetId, percent, sourceName) => {
                 const target = simUnits.find(u => u.unit_id === targetId);
-                const targetEvent = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === targetId);
-                if (!target || !targetEvent) return;
+                if (!target) return;
 
-                let originalAV = target.current_action_value; // 원래 도착 예정 시간 (타이 브레이커용)
+                let originalAV = target.current_action_value; 
                 
-                // 💡 [핵심 수정] 엉터리 단순 뺄셈을 지우고, 사용자님이 만든 완벽한 내장 함수를 호출합니다!
-                // 현재 시점(currentEvent.av)을 기준으로 행게증 수치를 정확히 소화합니다.
                 target.adjust_action_guage(percent / 100, 0, currentEvent.av);
-                
                 target.lastAdvancedAV = currentEvent.av;
-                targetEvent.av = target.current_action_value;
-                targetEvent.lastAdvancedAV = target.lastAdvancedAV;
                 
-                // 💡 동시 당김 발생 시 원래 빨리 올 예정이었던 유닛이 승리하도록 수학적 보정
-                targetEvent.queueId = currentEvent.queueId + (originalAV / 10000);
+                // 🔥 [핵심]: 대기열에 있든 무대(현재 턴)에 있든, '당겨지기 직전 AV'를 기반으로 한 우선순위 번호표를 몸에 새깁니다!
+                target.tempQueueId = currentEvent.queueId + (originalAV / 10000);
+
+                const targetEvent = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === targetId);
+                if (targetEvent) {
+                    targetEvent.av = target.current_action_value;
+                    targetEvent.lastAdvancedAV = target.lastAdvancedAV;
+                    targetEvent.queueId = target.tempQueueId; // 대기열에 있다면 즉시 번호표 교체
+                }
 
                 baseContext.log(`[${target.name}] 행동 게이지 ${percent}% 증가`, sourceName);
             },
@@ -384,10 +385,9 @@ function recalculate() {
 
             // ✨ 핵심: 정규 턴 행동 역시 똑같은 '공통 행동(ACTION)' 규격으로 포장합니다.
             pipeline.push({ type: 'ACTION', actor: actor, kit: mainKit, isMain: true });
-
+            pipeline.push({ type: 'GAUGE_RESET' });
             pipeline.push({ type: 'CHECKPOINT', phase: 3 });
             injectEvents(3);
-
             
             pipeline.push({ type: 'CHECKPOINT', phase: 4 });
             injectEvents(4);
@@ -405,6 +405,14 @@ function recalculate() {
                         broadcastEvent(EventHook.TURN_END, createContext(actor, turnNode.listenerLogs[4]));
                     }
                     turnNode.phaseEnterStates[block.phase] = { sp: spManager.current, e: actor.energy };
+                }
+                else if (block.type === 'GAUGE_RESET') {
+                    // 🔥 추가 턴(Extra Turn)이 아닐 경우에만 턴 카운트를 올리고 다음 행동 게이지를 채웁니다.
+                    // 이제 이 시점 이후(Phase 3, 4)에 들어오는 행게증/감은 '새로 충전된 다음 턴의 AV'를 상대로 계산됩니다!
+                    if (!turnNode.isExtraTurn) {
+                        actor.turnCount++;
+                        actor.current_action_value += actor.base_action_value;
+                    }
                 }
                 else if (block.type === 'ACTION') {
                     let currentActor = block.actor;
@@ -504,12 +512,7 @@ function recalculate() {
             let isAlive = simUnits.some(u => u.unit_id === actor.unit_id);
             
             if (isAlive) {
-                if (!turnNode.isExtraTurn) {
-                    actor.turnCount++;
-                    // 카운트다운 객체도 자신만의 고유 스피드로 다음 턴을 예약함
-                    actor.current_action_value += actor.base_action_value;
-                }
-
+                // 큐에 갱신된 턴을 장전
                 eventQueue.push({
                     eventType: 'TURN',
                     av: actor.current_action_value,
@@ -517,8 +520,12 @@ function recalculate() {
                     turnCount: actor.turnCount,
                     lastAdvancedAV: actor.lastAdvancedAV,
                     partyIndex: actor.partyIndex,
-                    queueId: queueGlobalCounter++ 
+                    // 🔥 [핵심]: 무대 위에서 로빈 궁을 맞아 발급받은 '특수 번호표'가 있다면 그걸 내밀고, 없으면 글로벌 카운터를 씁니다.
+                    queueId: (actor.tempQueueId !== undefined) ? actor.tempQueueId : queueGlobalCounter++ 
                 });
+                
+                // 💡 사용한 임시 번호표 폐기
+                actor.tempQueueId = undefined;
             }
         }
     }
