@@ -62,6 +62,8 @@ const huokit = new UnitKit(
         sp_cost: 1, 
         energy_gain: 30,
         tags: ['support'],
+        faction: 'ALLY',
+        scope: 'BLAST',
         abilityUse: (context) => {
             // 전스 사용 시 곽향 본인에게 양명 3턴 갱신
             context.addModifier(context.actingUnit.unit_id, {
@@ -80,6 +82,8 @@ const huokit = new UnitKit(
         energy_gain: 5, 
         energy_cost: 140,
         tags: ['support'], // 💡 지원형 궁극기이므로 피증/방깎 타격 프로세스 스킵
+        faction: 'ALLY',
+        scope: 'AOE',
         abilityUse: (context) => {
             const huohuoId = context.actingUnit.unit_id;
 
@@ -94,14 +98,14 @@ const huokit = new UnitKit(
             });
 
             // 2. 동료 전체 주유 및 버프
-            context.simUnits.forEach(ally => {
-                if (ally.unit_id !== huohuoId) {
+            context.targets.forEach(target => {
+                if (target.unit_id !== huohuoId) {
                     // 에너지 최대치의 20% 회복 (ERR 미적용 고정치이므로 false 전달)
-                    let recoverAmt = ally.max_energy * 0.20;
-                    context.chargeEnergy(ally, recoverAmt, "곽향 필살기", false);
+                    let recoverAmt = target.max_energy * 0.20;
+                    context.chargeEnergy(target, recoverAmt, "곽향 필살기", false);
                     
                     // 공격력 40% 버프 2턴 부여
-                    context.addModifier(ally.unit_id, {
+                    context.addModifier(target.unit_id, {
                         id: 'huohuo_ult_atk_boost',
                         name: '신귀 사역 (공격력 증가)',
                         type: 'BUFF',

@@ -7,8 +7,10 @@ const sundayUltimate = new ActionConfig({
     energy_cost: 130, 
     energy_gain: 5,
     tags: ['support'],
+    faction: 'ALLY',
+    scope: 'SINGLE',
     abilityUse: (context) => {
-        const target = context.simUnits.find(u => u.unit_id === 1505 || u.name === 'Evanescia');
+        const target = context.targets[0];
         
         if (target) {
             context.addModifier(target.unit_id, {
@@ -40,8 +42,10 @@ const sundaySkill = new ActionConfig({
     sp_cost: 1,         // 💡 엔진 파이프라인이 이 수치를 읽고 먼저 SP를 1 감소시킵니다. (-1 정산)
     energy_gain: 30, 
     tags: ['support'],
+    faction: 'ALLY',
+    scope: 'SINGLE',
     abilityUse: (context) => {
-        let target = context.target || context.simUnits.find(u => u.name === "Evanescia" || u.unit_id !== context.caster.unit_id);
+        let target = context.targets[0];
         
         if (target) {
             // 💡 1) 「화합」 운명의 길 캐릭터 검증 기믹

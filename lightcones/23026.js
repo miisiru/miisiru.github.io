@@ -11,22 +11,24 @@ export const lc23026 = [
         effect: (context) => {
             const wearer = context.caster;
             
-            // 장착자 본인의 로컬 스택 변수 초기화
-            if (typeof wearer.lc23026_stacks === 'undefined') wearer.lc23026_stacks = 0;
-
-            if (wearer.lc23026_stacks < 5) {
-                wearer.lc23026_stacks++;
+            // 1. 기존 버프 찾기
+            const existing = wearer.modifiers.list.find(m => m.id === 'LC_23026_SUB');
+            const currentStack = existing ? existing.stack : 0;
+            
+            if (currentStack < 5) {
+                const nextStack = currentStack + 1;
                 
-                // 🎯 [SUB] 부여 및 중첩 (duration 생략 = 무한 지속)
+                // 2. 버프 갱신 (stack 속성 활용)
                 context.addModifier(wearer.unit_id, {
                     id: 'LC_23026_SUB',
-                    name: `노래 (${wearer.lc23026_stacks}스택)`,
+                    name: `노래 (${nextStack}스택)`,
                     type: 'BUFF',
-                    stats: { err_boost: 0.03 * wearer.lc23026_stacks },
+                    stack: nextStack, // 🎯 이제 버프 안에 스택을 저장합니다!
+                    stats: { err_boost: 0.03 * nextStack },
                     sourceId: wearer.unit_id
                 });
                 
-                context.log(`LC_23026_SUB 갱신: 현재 ${wearer.lc23026_stacks}스택 (에너지 회복 효율 +${(3 * wearer.lc23026_stacks)}%)`, "광추 패시브");
+                context.log(`노래 스택 갱신: ${nextStack}스택 (에너지 회복 효율 +${(3 * nextStack)}%)`, "광추 패시브");
             }
         }
     }),

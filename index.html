@@ -263,15 +263,16 @@
                         </div>
 
                         <div style="flex: 1; display:flex; flex-direction:column; gap:4px;">
-                            <label style="font-size:11px; color:#94a3b8;">대상 유닛</label>
-                            <select id="event-target-select" style="padding:6px; background:var(--card); color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;">
-                                </select>
+                            <label style="font-size:11px; color:#94a3b8;">시전자/대상</label>
+                            <select id="event-target-select" style="padding:6px; background:var(--card); color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;"></select>
                         </div>
-
-                        <label for="event-target-select">대상(Target):</label>
-                        <select id="event-target-select">
-                            <option value="">(자동 지정 / 선택 안 함)</option>
-                        </select>
+                        
+                        <div id="event-skill-target-block" style="flex: 1; display:flex; flex-direction:column; gap:4px;">
+                            <label style="font-size:11px; color:#94a3b8;">스킬 타겟</label>
+                            <select id="event-skill-target-select" style="padding:6px; background:var(--card); color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;">
+                                <option value="">(자동/타겟 없음)</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div id="event-value-block" style="display:none; flex-direction:column; gap:4px;">
@@ -298,6 +299,13 @@
                 <div style="margin-top:15px; display:flex; gap:10px;">
                     <button class="action-btn" style="flex: 1;" onclick="updateCurrentAction('B')">Basic (B)</button>
                     <button class="action-btn skill" style="flex: 1;" onclick="updateCurrentAction('S')">Skill (S)</button>
+                </div>
+
+                <div id="focus-target-block" style="margin-top:12px; display:flex; align-items:center; gap:10px;">
+                    <label style="font-size:12px; color:#94a3b8; white-space: nowrap;">메인 타겟:</label>
+                    <select id="focus-target-select" onchange="updateCurrentTarget(this.value)" style="flex:1; padding:6px; background:#0b0f1a; color:var(--text); border:1px solid #2d3748; border-radius:4px; font-size:12px;">
+                        <option value="">(자동 설정)</option>
+                    </select>
                 </div>
             </div>
         </main>

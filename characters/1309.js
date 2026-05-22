@@ -43,6 +43,8 @@ const robinkit = new UnitKit(
         sp_cost: 1, 
         energy_gain: 30,
         tags: ['support'],
+        faction: 'ALLY',
+        scope: 'SELF',
         abilityUse: (context) => {
             context.chargeEnergy(context.actingUnit, 5, "추능3", true);
             context.log("에너지 5pt 회복", "로빈 전투 스킬");
@@ -66,6 +68,8 @@ const robinkit = new UnitKit(
         energy_gain: 5, 
         energy_cost: 160,
         tags: ['support'], // 💡 지원 스킬이므로 공격 판정 제외
+        faction: 'ALLY',
+        scope: 'SELF',
         abilityUse: (context) => {
             const robinId = context.actingUnit.unit_id;
 

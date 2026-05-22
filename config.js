@@ -43,7 +43,7 @@ export class EventListener {
 }
 
 export class ActionConfig {
-    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, energy_cost = 0, action_type, skill_type, abilityUse = null, tags=['attack'] }) {
+    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, energy_cost = 0, action_type, skill_type, abilityUse = null, tags=['attack'], faction = 'ENEMY', scope = 'SINGLE' }) {
         this.name = name;
         this.sp_cost = sp_cost;
         this.sp_gain = sp_gain;
@@ -51,6 +51,9 @@ export class ActionConfig {
         this.action_type = action_type;
         this.skill_type = skill_type;
         this.energy_cost = energy_cost;
+
+        this.faction = faction
+        this.scope = scope;
         
         // 💡 특정 캐릭터만의 고유한 타겟팅 로직이나 특수 기믹을 덮어씌울 수 있도록 콜백 허용
         this.customAbilityUse = abilityUse; 
@@ -161,9 +164,8 @@ export class Modifier {
         this.duration = config.duration || 1;
         this.sourceId = config.sourceId || 'SYSTEM';
         this.tickOn = config.tickOn || 'TURN_END';
-        
-        // 💡 [신규] 누구의 턴에 차감할 것인가? (입력이 없으면 무조건 장착자 본인 'self'로 설정)
         this.tickSource = config.tickSource || 'self'; 
+        this.stack = config.stack || 1;
         
         this.requireTurnStart = config.requireTurnStart !== false; 
         this.hasSeenTurnStart = false; 
@@ -270,4 +272,35 @@ export class ModifierManager {
     getStat(statKey) {
         return this.list.reduce((sum, mod) => sum + (mod.stats[statKey] || 0), 0);
     }
+}
+
+export function resolveTargets(simUnits, actor, mainTargetId, faction, scope) {
+    let targets = [];
+    
+    // 1. 피아 식별 (현재는 적군 시스템이 없으므로 임시로 파티원 전체를 아군 풀로 취급)
+    // 향후 적군 객체가 생기면 u.faction === 'ALLY' / 'ENEMY' 로 구분하여 validPool을 짭니다.
+    let validPool = simUnits.filter(u => u.unit_id !== 1309 || u.archetype !== 'COUNTDOWN'); // 카운트다운 같은 시스템 유닛 제외
+
+    // 2. 범위(Scope)에 따른 타겟 배열 완성
+    if (scope === 'SELF') {
+        targets = [actor];
+    } 
+    else if (scope === 'AOE') {
+        targets = [...validPool]; // 해당 진영 전체
+    } 
+    else if (scope === 'SINGLE') {
+        const target = validPool.find(u => String(u.unit_id) === String(mainTargetId));
+        if (target) targets = [target];
+    } 
+    else if (scope === 'BLAST') {
+        // 확산 기믹: 메인 타겟을 찾은 뒤, validPool 배열에서의 인덱스를 기준으로 좌/우 유닛을 찾음
+        const tIndex = validPool.findIndex(u => String(u.unit_id) === String(mainTargetId));
+        if (tIndex !== -1) {
+            if (tIndex > 0) targets.push(validPool[tIndex - 1]); // 좌측 타겟
+            targets.push(validPool[tIndex]);                     // 메인 타겟
+            if (tIndex < validPool.length - 1) targets.push(validPool[tIndex + 1]); // 우측 타겟
+        }
+    }
+
+    return targets;
 }

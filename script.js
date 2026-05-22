@@ -1,4 +1,4 @@
-import { fetchStarRailData, EventHook, EventListener, SkillPointManager, chargeUnitEnergy, Modifier, ModifierManager } from './config.js';
+import { fetchStarRailData, EventHook, EventListener, SkillPointManager, chargeUnitEnergy, Modifier, ModifierManager, resolveTargets } from './config.js';
 import { PRESET_UNITS, availableCharacters } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
 import { LightCone } from './lc.js'
@@ -41,6 +41,7 @@ window.PRESET_UNITS = PRESET_UNITS;
 export let state = { 
     unitData: [],      
     actionPlans: {},   
+    actionTargets: {},
     timeline: [],      
     selectedIdx: null, 
     selectedPhase: null,
@@ -122,6 +123,8 @@ function buildInitialTimeline() {
             plan.push(...repeatSeq);
         }
         state.actionPlans[u.unit_id] = plan.slice(0, 100);
+
+        state.actionTargets[u.unit_id] = new Array(100).fill(null);
         
         return u;
     });
@@ -363,6 +366,7 @@ function recalculate() {
             let isCountdown = actor.archetype === 'COUNTDOWN';
             let actionType = "BASIC";
             let mainKit = null;
+            let targetUnit = null
 
             if (isCountdown) {
                 // 카운트다운은 사용자 actionPlans 장부가 없으므로 강제로 전용 스크립트 지정
@@ -373,6 +377,10 @@ function recalculate() {
                 let planArray = state.actionPlans[actor.unit_id] || [];
                 actionType = planArray[currentEvent.turnCount] || "BASIC";
                 mainKit = (actionType === "S") ? actor.kit.skill : actor.kit.basic;
+
+                let targetArray = state.actionTargets[actor.unit_id] || [];
+                let savedTargetId = targetArray[currentEvent.turnCount] || null;
+                targetUnit = savedTargetId ? simUnits.find(u => String(u.unit_id) === String(savedTargetId)) : null;
             }
 
             let turnNode = {
@@ -401,10 +409,14 @@ function recalculate() {
                 relatedEvents.filter(ev => ev.phase === phaseNum).forEach(ev => {
                     if (ev.type === 'Ult') {
                         let ultActor = simUnits.find(u => u.unit_id === ev.unitId);
+                        
+                        // 🎯 [신규] 장부에 기록된 skillTargetId로 타겟 유닛을 찾습니다!
+                        let skillTarget = simUnits.find(u => String(u.unit_id) === String(ev.skillTargetId));
+
                         if (ultActor) {
                             let ultKit = ultActor.kit.ultimate;
-                            // ✨ 핵심: 궁극기도 '하나의 공통 행동(ACTION)' 규격으로 포장합니다.
-                            pipeline.push({ type: 'ACTION', actor: ultActor, kit: ultKit, isMain: false, eventRef: ev, phase: phaseNum });
+                            // 🎯 targetUnit 속성에 skillTarget을 담아서 파이프라인으로 보냅니다!
+                            pipeline.push({ type: 'ACTION', actor: ultActor, targetUnit: skillTarget, kit: ultKit, isMain: false, eventRef: ev, phase: phaseNum });
                         }
                     } else {
                         // 행게 조작 등 기타 시스템 이벤트
@@ -421,7 +433,7 @@ function recalculate() {
             injectEvents(2);
 
             // ✨ 핵심: 정규 턴 행동 역시 똑같은 '공통 행동(ACTION)' 규격으로 포장합니다.
-            pipeline.push({ type: 'ACTION', actor: actor, kit: mainKit, isMain: true });
+            pipeline.push({ type: 'ACTION', actor: actor, targetUnit: targetUnit, kit: mainKit, isMain: true });
             pipeline.push({ type: 'GAUGE_RESET' });
             pipeline.push({ type: 'CHECKPOINT', phase: 3 });
             injectEvents(3);
@@ -458,13 +470,23 @@ function recalculate() {
                     let currentPhase = block.phase || 2; 
                     let currentLogs = block.isMain ? turnNode.listenerLogs[currentPhase] : [];
 
+                    let faction = block.kit.faction || 'ENEMY';
+                    let scope = block.kit.scope || 'SINGLE';
+                    
+                    // 💡 [신규] UI에서 넘어온 메인 타겟 ID 추출
+                    let mainTargetId = block.targetUnit ? block.targetUnit.unit_id : null;
+
+                    // 🎯 [핵심] 해석기를 돌려 '실제 타격받을 대상 배열'을 완성합니다!
+                    let resolvedTargets = resolveTargets(simUnits, currentActor, mainTargetId, faction, scope);
+
                     let currentContext = createContext(currentActor, currentLogs, {
                         kit: block.kit, 
                         isMain: block.isMain, 
                         actionType: block.isMain ? actionType : 'ULT',
-                        tags: actionTags 
+                        tags: actionTags,
+                        target: block.targetUnit, // 기존 호환성을 위해 단일 타겟도 남겨둠
+                        targets: resolvedTargets  // 🎯 완성된 배열을 드디어 엔진 Context에 주입!
                     });
-
                     // ==========================================
                     // 🎬 10단계 세분화 파이프라인 방송 시작
                     // ==========================================
@@ -607,6 +629,7 @@ function selectPhase(phaseNum) {
     const notice = document.getElementById('event-empty-notice');
     const title = document.getElementById('selected-phase-info');
     const targetSelect = document.getElementById('event-target-select');
+    const skillTargetSelect = document.getElementById('event-skill-target-select'); // 💡 새로 추가한 드롭다운 찾기
     
     if (phaseNum === null || state.selectedIdx === null) {
         container.style.display = 'none';
@@ -622,15 +645,16 @@ function selectPhase(phaseNum) {
     
     // 대상 유닛 옵션 채우기
     targetSelect.innerHTML = state.unitData.map(u => `<option value="${u.unit_id}">${u.name}</option>`).join('');
+    skillTargetSelect.innerHTML = `<option value="">(자동/타겟 없음)</option>` + state.unitData.map(u => `<option value="${u.unit_id}">${u.name}</option>`).join('');
     
     toggleEventValueInput();
     render(); // 하이라이팅 적용을 위한 새로고침
 }
 
-function toggleEventValueInput() {
+window.toggleEventValueInput = function() {
     const type = document.getElementById('event-type-select').value;
-    const valueBlock = document.getElementById('event-value-block');
-    valueBlock.style.display = (type === 'Gauge') ? 'flex' : 'none';
+    document.getElementById('event-value-block').style.display = (type === 'Gauge') ? 'flex' : 'none';
+    document.getElementById('event-skill-target-block').style.display = (type === 'Ult') ? 'flex' : 'none';
 }
 
 function addFollowUpEvent() {
@@ -638,9 +662,15 @@ function addFollowUpEvent() {
     
     const item = state.timeline[state.selectedIdx];
     const type = document.getElementById('event-type-select').value;
-    const targetUnitId = parseInt(document.getElementById('event-target-select').value);
+
+    const targetUnitIdStr = document.getElementById('event-target-select').value;
+    
+    // 🎯 [신규] 스킬 타겟 드롭다운 값 읽어오기
+    const skillTargetSelect = document.getElementById('event-skill-target-select');
+    const skillTargetIdStr = skillTargetSelect ? skillTargetSelect.value : null;
+
     const value = parseFloat(document.getElementById('event-value-input').value || 0);
-    const targetUnit = state.unitData.find(u => u.unit_id === targetUnitId);
+    const targetUnit = state.unitData.find(u => String(u.unit_id) === targetUnitIdStr);
 
     let nth = item.unitId === 'SYSTEM' ? item.type : state.timeline.filter(a => a.unitId === item.unitId && a.isTurn).indexOf(item);
 
@@ -650,7 +680,8 @@ function addFollowUpEvent() {
         baseUnitId: item.unitId,
         baseTurnNth: nth,
         phase: state.selectedPhase,
-        unitId: targetUnitId,
+        unitId: targetUnit ? targetUnit.unit_id : targetUnitIdStr,
+        skillTargetId: skillTargetIdStr,
         name: targetUnit ? targetUnit.name : 'Unknown',
         type: type,
         value: type === 'Gauge' ? value : 0
@@ -704,6 +735,23 @@ function updateDetail() {
     if (state.selectedIdx === null) return;
     const action = state.timeline[state.selectedIdx];
     const isGlobal = action.unitId === 'SYSTEM';
+
+    const focusTargetSelect = document.getElementById('focus-target-select');
+    if (focusTargetSelect && !isGlobal && action.type !== 'Ult') {
+        // 1. 유닛 옵션 채우기
+        focusTargetSelect.innerHTML = `<option value="">(자동 설정)</option>` + 
+                                      state.unitData.map(u => `<option value="${u.unit_id}">${u.name}</option>`).join('');
+
+        // 2. 현재 턴이 장부(actionTargets)에 타겟이 저장되어 있다면 그 값으로 세팅
+        let unitActions = state.timeline.filter(a => a.unitId === action.unitId && a.type !== 'Ult');
+        let nth = unitActions.indexOf(action);
+        
+        if (nth !== -1 && state.actionTargets && state.actionTargets[action.unitId]) {
+            focusTargetSelect.value = state.actionTargets[action.unitId][nth] || "";
+        } else {
+            focusTargetSelect.value = "";
+        }
+    }
 
     if (isGlobal) {
         document.getElementById('focus-name').textContent = "시스템 - " + action.title;
@@ -1060,6 +1108,32 @@ function render() {
         const action = state.timeline[state.selectedIdx];
         const isGlobal = action.unitId === 'SYSTEM';
         
+        const focusTargetBlock = document.getElementById('focus-target-block');
+        const focusTargetSelect = document.getElementById('focus-target-select');
+
+        if (focusTargetSelect && focusTargetBlock) {
+            // 시스템 노드, 궁극기, 카운트다운일 때는 타겟 변경창 숨기기
+            if (isGlobal || action.type === 'Ult' || action.isCountdown) {
+                focusTargetBlock.style.display = 'none';
+            } else {
+                focusTargetBlock.style.display = 'flex';
+                
+                // 1. 유닛 목록 동적으로 채워넣기
+                focusTargetSelect.innerHTML = `<option value="">(자동 설정)</option>` + 
+                                              state.unitData.map(u => `<option value="${u.unit_id}">${u.name}</option>`).join('');
+
+                // 2. 장부(actionTargets)에서 현재 턴에 저장된 타겟이 있으면 불러오기
+                let unitActions = state.timeline.filter(a => a.unitId === action.unitId && a.type !== 'Ult');
+                let nth = unitActions.indexOf(action);
+                
+                if (nth !== -1 && state.actionTargets && state.actionTargets[action.unitId]) {
+                    focusTargetSelect.value = state.actionTargets[action.unitId][nth] || "";
+                } else {
+                    focusTargetSelect.value = "";
+                }
+            }
+        }
+
         if (isGlobal) {
             document.getElementById('focus-name').textContent = "시스템 - " + action.title;
             document.getElementById('energy-text-val').textContent = `-/-`;
@@ -1174,5 +1248,19 @@ window.selectPhase = selectPhase;
 window.removeFollowUpEvent = removeFollowUpEvent;
 window.addFollowUpEvent = addFollowUpEvent;
 window.updateCurrentAction = updateCurrentAction;
+
+window.updateCurrentTarget = function(targetId) {
+    if (state.selectedIdx === null) return;
+    let action = state.timeline[state.selectedIdx];
+    if (action.type === 'Ult' || action.unitId === 'SYSTEM') return;
+
+    let unitActions = state.timeline.filter(a => a.unitId === action.unitId && a.type !== 'Ult');
+    let nth = unitActions.indexOf(action);
+
+    if (nth !== -1) {
+        state.actionTargets[action.unitId][nth] = targetId === "" ? null : targetId;
+        recalculate(); 
+    }
+}
 
 buildInitialTimeline()
