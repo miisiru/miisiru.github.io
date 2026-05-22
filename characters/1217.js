@@ -108,7 +108,7 @@ const huokit = new UnitKit(
                         stats: { atk_boost: 0.40 },
                         duration: 2,
                         sourceId: huohuoId,
-                        tickOn: 'TURN_START' // 대상 턴 시작 시 차감
+                        tickOn: 'TURN_END'
                     });
                 }
             });

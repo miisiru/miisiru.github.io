@@ -14,6 +14,17 @@ const robinTechnique = new EventListener({
     }
 });
 
+const robinBonusAbility1 = new EventListener({
+    id: "robin_bonus_ability_1",
+    name: "로빈 추능 1 (행게증)",
+    hook: EventHook.BATTLE_START,
+    condition: (context) => { return true; },
+    effect: (context) => {
+        context.advanceActionGauge(context.caster.unit_id, 25, "로빈 추능1");
+    }
+});
+
+
 const robinTalent = new EventListener({
     id: "robin_talent",
     name: "로빈 특성 (아군 공격 시 에너지 회복)",
@@ -168,3 +179,4 @@ const robinkit = new UnitKit(
 export const Robin = new Unit({unit_id: 1309, kit: robinkit, rotation: {initial: [], repeat: ['S']}});
 
 Robin.registerListener(robinTalent)
+Robin.registerListener(robinBonusAbility1)

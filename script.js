@@ -191,12 +191,13 @@ function recalculate() {
                 const targetEvent = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === targetId);
                 if (!target || !targetEvent) return;
 
-                let originalAV = target.current_action_value; // 원래 AV 기록
-                let advanceAmt = target.base_action_value * (percent / 100);
+                let originalAV = target.current_action_value; // 원래 도착 예정 시간 (타이 브레이커용)
                 
-                target.current_action_value = Math.max(0, target.current_action_value - advanceAmt);
+                // 💡 [핵심 수정] 엉터리 단순 뺄셈을 지우고, 사용자님이 만든 완벽한 내장 함수를 호출합니다!
+                // 현재 시점(currentEvent.av)을 기준으로 행게증 수치를 정확히 소화합니다.
+                target.adjust_action_guage(percent / 100, 0, currentEvent.av);
+                
                 target.lastAdvancedAV = currentEvent.av;
-                
                 targetEvent.av = target.current_action_value;
                 targetEvent.lastAdvancedAV = target.lastAdvancedAV;
                 
@@ -387,6 +388,7 @@ function recalculate() {
             pipeline.push({ type: 'CHECKPOINT', phase: 3 });
             injectEvents(3);
 
+            
             pipeline.push({ type: 'CHECKPOINT', phase: 4 });
             injectEvents(4);
 
@@ -782,7 +784,7 @@ function render() {
                     // 이미 부모가 열려있다면 기존처럼 하위 이벤트만 토글
                     state.selectedSubEventId = state.selectedSubEventId === String(subEventId) ? null : String(subEventId);
                 }
-                window.render();
+                render();
             }; 
             return ultDiv;
         };
