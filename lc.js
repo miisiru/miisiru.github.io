@@ -1,8 +1,7 @@
 import subStatData from './data/relic_sub_affixes.json' with { type: 'json' };
 import mainStatData from './data/relic_main_affixes.json' with { type: 'json' };
 import gameData from './data/game_data.json' with { type: 'json' };
-
-import { LightCone } from './config.js';
+import * as Lightcones from './lightcones/index.js'
 
 export function getBaseLCId(id) {
     const idMap = {
@@ -60,4 +59,28 @@ export function getLCStats(lc) {
     // 4. 해당 중첩 단계의 스탯 객체를 매칭하여 반환
     // 예: currentRank가 1이면 { "DefenceAddedRatio": 0.24, "StatusProbabilityBase": 0.24 } 가 반환됨
     return lcData.superimpositions[currentRank];
+}
+
+export function getLCAbility(id) {
+    const idMap = {
+        23026: Lightcones.lc23026
+    }
+
+    return idMap[id] ?? [];
+}
+
+export class LightCone {
+    constructor(id, superimposition=undefined, level=80) {
+        this.id = id
+        this.name = gameData.lightCones[id].name
+        this.rarity = gameData.lightCones[id].rarity
+        this.base_hp = gameData.lightCones[id].stats.HP
+        this.base_atk = gameData.lightCones[id].stats.ATK
+        this.base_def = gameData.lightCones[id].stats.DEF
+        this.path = gameData.lightCones[id].path
+        this.superimposition = superimposition ?? (this.rarity === 5 ? 1 : 5);
+        this.superimposition_values = gameData.lightCones[id].superimpositions
+        this.level = level
+        this.ability = getLCAbility(this.id)
+    }
 }

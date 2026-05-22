@@ -1,4 +1,4 @@
-import { Unit, fetchStarRailData, LightCone } from './config.js';
+import { fetchStarRailData } from './config.js';
 import { PRESET_UNITS, availableCharacters } from './char.js';
 import { gameData, subStatData, mainStatData } from './config.js';
 import { state } from './script.js';

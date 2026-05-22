@@ -703,3 +703,20 @@ aside.collapsed > *:not(:first-child) {
 .seq-btn.btn-s { background: #0284c7; }
 .seq-btn.btn-clear { background: #be123c; }
 .seq-btn:hover { filter: brightness(1.2); }
+
+/* 💡 연속 로그 폴더(details) 스타일 */
+details.log-details summary::-webkit-details-marker {
+    display: none; /* 기본 화살표 숨김 */
+}
+details.log-details summary {
+    list-style: none; /* 기본 화살표 숨김 (표준) */
+}
+details.log-details[open] summary .toggle-arrow {
+    display: inline-block;
+    transform: rotate(180deg); /* 열렸을 때 화살표 위로 뒤집기 */
+    transition: transform 0.2s;
+}
+details.log-details summary .toggle-arrow {
+    display: inline-block;
+    transition: transform 0.2s;
+}

@@ -405,6 +405,7 @@ window.openSettingsModal = function(idx) {
     // 💡 기존에 저장된 값이 있으면 불러오고, 없으면 0/빈칸 처리
     tempEidolon = state.eidolons[idx] || 0; 
     document.getElementById('setting-spd-input').value = state.customSpds[idx] || "";
+    document.getElementById('setting-technique-checkbox').checked = state.techniques[idx] || true;
     
     // 💡 [추가] 원본 로테이션 데이터를 깊은 복사하여 임시 데이터로 가져옴
     tempRotationData = JSON.parse(JSON.stringify(state.rotations[idx] || { initial: [], repeat: ['B'] }));
@@ -460,6 +461,7 @@ setTimeout(() => {
             // 2. 모달에서 조작하던 임시 성혼 값을 state 장부에 기록
             state.eidolons[idx] = tempEidolon;
             state.rotations[idx] = JSON.parse(JSON.stringify(tempRotationData));
+            state.techniques[idx] = document.getElementById('setting-technique-checkbox').checked;
             // 3. 데이터 커밋이 끝났으므로 모달 창 닫기
             closeSettings();
             

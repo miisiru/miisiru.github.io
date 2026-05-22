@@ -188,6 +188,14 @@
                             <h4 style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 13px;">강제 속도 고정 (SPD)</h4>
                             <input type="number" id="setting-spd-input" placeholder="스탯 유지 (비워둠)" style="width: 100%; padding: 8px; background: #0b0f1a; border: 1px solid #3b4f76; color: var(--text); border-radius: 4px; font-size: 12px; box-sizing: border-box; outline: none;">
                         </div>
+
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                            <div style="font-size: 12px; color: #94a3b8; min-width: 45px;">비술</div>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="setting-technique-checkbox" style="cursor: pointer;">
+                                <span style="font-size: 12px; color: #cbd5e1;">전투 진입 시 비술 사용</span>
+                            </label>
+                        </div>
                         
                         <div style="background: #182030; padding: 16px; border-radius: 8px; border: 1px solid #26324d;">
                             <h4 style="margin: 0 0 12px 0; color: #cbd5e1; font-size: 13px;">성혼 개방 (Eidolon)</h4>
@@ -195,7 +203,7 @@
                                 </div>
                         </div>
 
-                        <div style="background: #182030; padding: 16px; border-radius: 8px; border: 1px solid #26324d; margin-top: 15px;">
+                        <div style="background: #182030; padding: 16px; border-radius: 8px; border: 1px solid #26324d;">
                             <h4 style="margin: 0 0 12px 0; color: #cbd5e1; font-size: 13px;">행동 로테이션 (Auto)</h4>
                             
                             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
@@ -298,5 +306,6 @@
     <script type="module" src="lc-modal.js"></script>
     <script type="module" src="showcase-modal.js"></script>
     <script type="module" src="modals.js"></script>
+    <script type="module" src="characters/index.js"></script>
 </body>
 </html>
