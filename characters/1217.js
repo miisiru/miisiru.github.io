@@ -95,9 +95,6 @@ const huokit = new UnitKit(
         abilityUse: (context) => {
             const huohuo = context.actingUnit;
             const mainTarget = context.targets[0]; // 타겟 해석기가 넘겨준 첫 번째 배열 값이 메인 타겟
-            
-            // 1. 디버프 해제 (차후 구현을 위해 로그만 남김)
-            context.log(`[${mainTarget.name}]의 디버프 1개 해제`, "곽향 전투 스킬");
 
             // 2. 메인 타겟 힐 (24% + 640)
             const mainHealAmt = (huohuo.max_hp * 0.24) + 640;

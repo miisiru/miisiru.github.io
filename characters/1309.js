@@ -49,15 +49,20 @@ const robinkit = new UnitKit(
             context.chargeEnergy(context.actingUnit, 5, "추능3", true);
             context.log("에너지 5pt 회복", "로빈 전투 스킬");
 
+            const allAllies = context.simUnits.filter(u => u.faction === 'ALLY');
+
             // 💡 반복문 삭제! 오직 시전자(로빈) 본인의 unit_id에만 버프를 부여합니다.
-            context.addModifier(context.actingUnit.unit_id, {
-                id: 'robin_skill_aria',
-                name: '깃털의 아리아',
-                type: 'BUFF',
-                stats: { dmg_boost: 0.50 }, // 가하는 피해 50% 증가
-                duration: 3,
-                sourceId: context.actingUnit.unit_id,
-                tickOn: 'TURN_START' // 본인 턴 시작 시 차감
+            allAllies.forEach(ally => {
+                context.addModifier(ally.unit_id, {
+                    id: 'robin_skill_aria',
+                    name: '깃털의 아리아',
+                    type: 'BUFF',
+                    stats: { dmg_boost: 0.50 }, // 가하는 피해 50% 증가
+                    duration: 3,
+                    sourceId: context.actingUnit.unit_id,
+                    tickSource: context.actingUnit.unit_id,
+                    tickOn: 'TURN_START' // 본인 턴 시작 시 차감
+                });
             });
             
             context.log("자신에게 [깃털의 아리아] 버프 부여 (3턴)", "로빈 전투 스킬");
@@ -72,8 +77,8 @@ const robinkit = new UnitKit(
         scope: 'SELF',
         abilityUse: (context) => {
             const robinId = context.actingUnit.unit_id;
-
-            context.simUnits.forEach(ally => {
+            const allAllies = context.simUnits.filter(u => u.faction === 'ALLY')
+            allAllies.forEach(ally => {
                 if (ally.unit_id !== robinId) {
                     // 💡 엔진 통제 API 호출 단 한 줄이면 끝! 정렬과 우선순위는 엔진이 알아서 완벽하게 처리합니다.
                     context.advanceActionGauge(ally.unit_id, 100, "로빈 필살기");
@@ -85,7 +90,6 @@ const robinkit = new UnitKit(
                 id: 'robin_concerto',
                 name: '협주',
                 type: 'STATE', // 버프가 아닌 특수 상태로 분류
-                duration: -1,  // 무한 지속 (카운트다운이 직접 해제함)
                 sourceId: robinId
             });
             context.log("자신에게 [협주] 상태 부여 (행동 불가)", "로빈 필살기");

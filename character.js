@@ -124,32 +124,80 @@ export class Unit {
             "spd": this.relicStats["SPD"] + this.base_stats.spd * this.relicStats["SPD%"] + this.lcStats["SPD"] + (gameData.characters[this.unit_id].traces["SPD"] ?? 0)
         }
 
-        this.spd = spd ?? this.base_stats.spd + this.base_added_stats.spd
-        this.max_hp = this.base_stats.hp + this.base_added_stats.hp
-        this.atk = this.base_stats.atk + this.base_added_stats.atk
-        this.def = this.base_stats.def + this.base_added_stats.def
-        this.cr = this.base_stats.cr + this.base_added_stats.cr
-        this.cd = this.base_stats.cd + this.base_added_stats.cd
-        this.heal_ratio = this.base_stats.heal_ratio + this.base_added_stats.heal_ratio
-        this.ehr = this.base_stats.ehr + this.base_added_stats.ehr
-        this.eres = this.base_stats.eres + this.base_added_stats.eres
-        this.be = this.base_stats.be + this.base_added_stats.be
-        this.err = this.base_stats.err + this.base_added_stats.err
-        this.elation = this.base_stats.elation + this.base_added_stats.elation
-        this.dmg_boost = { ...this.base_stats.dmg_boost }
-        for (const key in this.base_stats.dmg_boost ) {
-            this.dmg_boost[key] = (this.dmg_boost[key] || 0) + this.base_added_stats.dmg_boost[key]
+        this.displayed_stats = {
+            "spd": this.base_stats.spd + this.base_added_stats.spd,
+            "hp": this.base_stats.hp + this.base_added_stats.hp,
+            "atk": this.base_stats.atk + this.base_added_stats.atk,
+            "def": this.base_stats.def + this.base_added_stats.def,
+            "cr": this.base_stats.cr + this.base_added_stats.cr,
+            "cd": this.base_stats.cd + this.base_added_stats.cd,
+            "heal_ratio": this.base_stats.heal_ratio + this.base_added_stats.heal_ratio,
+            "ehr": this.base_stats.ehr + this.base_added_stats.ehr,
+            "eres": this.base_stats.eres + this.base_added_stats.eres,
+            "be": this.base_stats.be + this.base_added_stats.be,
+            "err": this.base_stats.err + this.base_added_stats.err,
+            "elation": this.base_stats.elation + this.base_added_stats.elation,
+            "dmg_boost": { ...this.base_stats.dmg_boost }
         }
 
-        this.current_speed = this.spd; 
+        for (const key in this.base_stats.dmg_boost) {
+            this.displayed_stats.dmg_boost[key] = (this.displayed_stats.dmg_boost[key] || 0) + this.base_added_stats.dmg_boost[key]
+        }
+
+        // 🎯 [수정] 정적 할당 제거 및 기본 속성 초기화
         this.kit = kit;
+        this.listeners = [];
+        this.rotation = rotation;
         
-        this.base_action_value = action_value_from_spd(this.current_speed);
+        // 전투 진입 시점에 체력과 에너지는 고정값으로 시작 (최대치는 실시간 반영)
+        this.current_hp = this.displayed_stats.hp; 
+        
+        // ModifierManager는 엔진(recalculate)에서 주입해주지만, 
+        // 오류 방지를 위해 깡통 상태에서도 빈 껍데기를 가질 수 있게 안전장치를 둡니다.
+        this.modifiers = { getStat: () => 0 }; 
+
+        this.base_action_value = action_value_from_spd(this.displayed_stats.spd);
         this.current_action_value = this.base_action_value;
 
-        this.listeners = []
+        this._cached_speed = this.current_speed;
+    }
 
-        this.rotation = rotation
+    get atk() {
+        const buffPct = this.modifiers.getStat('atk_boost') || 0;
+        const buffFlat = this.modifiers.getStat('atk_flat') || 0;
+        return this.displayed_stats.atk + (this.base_stats.atk * buffPct) + buffFlat;
+    }
+
+    get def() {
+        const buffPct = this.modifiers.getStat('def_boost') || 0;
+        const buffFlat = this.modifiers.getStat('def_flat') || 0;
+        return this.displayed_stats.def + (this.base_stats.def * buffPct) + buffFlat;
+    }
+
+    get max_hp() {
+        const buffPct = this.modifiers.getStat('hp_boost') || 0;
+        const buffFlat = this.modifiers.getStat('hp_flat') || 0;
+        return this.displayed_stats.hp + (this.base_stats.hp * buffPct) + buffFlat;
+    }
+
+    get current_speed() {
+        const buffPct = this.modifiers.getStat('spd_boost') || 0;
+        const buffFlat = this.modifiers.getStat('spd_flat') || 0;
+        return this.displayed_stats.spd + (this.base_stats.spd * buffPct) + buffFlat;
+    }
+
+    get cr() { return this.displayed_stats.cr + (this.modifiers.getStat('cr_boost') || 0); }
+    get cd() { return this.displayed_stats.cd + (this.modifiers.getStat('cd_boost') || 0); }
+    get heal_ratio() { return this.displayed_stats.heal_ratio + (this.modifiers.getStat('heal_boost') || 0); }
+    get ehr() { return this.displayed_stats.ehr + (this.modifiers.getStat('ehr_boost') || 0); }
+    get eres() { return this.displayed_stats.eres + (this.modifiers.getStat('eres_boost') || 0); }
+    get be() { return this.displayed_stats.be + (this.modifiers.getStat('be_boost') || 0); }
+    get err() { return this.displayed_stats.err + (this.modifiers.getStat('err_boost') || 0); }
+
+    getDmgBoost(element) {
+        const allDmgBoost = this.modifiers.getStat('dmg_boost') || 0;
+        const elemDmgBoost = this.modifiers.getStat(`${element}_dmg_boost`) || 0;
+        return (this.displayed_stats.dmg_boost[element] || 0) + allDmgBoost + elemDmgBoost;
     }
 
     registerListener(listener) {
@@ -162,7 +210,7 @@ export class Unit {
      * @param {number} delay_ratio - 행게감 비율 (예: 20% = 0.2)
      * @param {number} current_time - 현재 시뮬레이터의 전역 시간 (currentEvent.av)
      */
-    adjust_action_guage(advance_ratio, delay_ratio, current_time) {
+    adjust_action_gauge(advance_ratio, delay_ratio, current_time) {
         // 1. 목표 도착 시간에서 현재 시간을 빼서 '남은 대기 시간(AV)'을 구함
         let remaining_av = Math.max(0, this.current_action_value - current_time);
 
@@ -187,20 +235,13 @@ export class Unit {
      * @param {number} value - 설정할 남은 게이지 값 (보통 0)
      * @param {number} current_time - 현재 시뮬레이터의 전역 시간 (currentEvent.av)
      */
-    set_action_guage(value, current_time) {
+    set_action_gauge(value, current_time) {
         // 강제로 설정할 게이지가 0보다 작을 수 없도록 보정
         let new_gauge = Math.max(0, value);
 
         // 새 게이지를 바탕으로 타임라인 상의 목표 도착 시간을 재설정
         this.current_action_value = current_time + (new_gauge / this.current_speed);
 
-        return this;
-    }
-
-    modification(ability, ability_values) {
-        if(ability === Ability.ActionGuageModification) {
-            return this.adjust_action_guage(ability_values.aa || 0, ability_values.ad || 0);
-        }
         return this;
     }
 

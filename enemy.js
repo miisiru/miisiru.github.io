@@ -24,11 +24,11 @@ export class Enemy {
         this.archetype = 'ENEMY'; 
 
         // 2. 기본 스탯
-        this.max_hp = config.hp || 100000;
+        this.max_hp = config.hp || 100000000;
         this.current_hp = this.max_hp;
         this.base_spd = config.spd || 100;
-        this.atk = config.atk || 1000;
-        this.def = config.def || 1000;
+        this.atk = config.atk || 688.063;
+        this.def = config.def || this.level*10+200;
         
         // 3. 저항 관련 스탯
         this.effect_res = config.effect_res || 0.2;
@@ -36,7 +36,7 @@ export class Enemy {
 
         // 4. 강인도 (Toughness) 
         this.weaknesses = config.weaknesses || [];
-        this.max_toughness = config.toughness || 100;
+        this.max_toughness = config.toughness || 140;
         this.current_toughness = this.max_toughness;
         this.isBroken = false;
 

@@ -510,3 +510,74 @@ window.clearTempRotation = function(type) {
     tempRotationData[type] = [];
     window.renderRotationUI();
 };
+
+window.openBuffModal = function(unitId) {
+    const overlay = document.getElementById('buff-modal-overlay');
+    const body = document.getElementById('buff-modal-body');
+    if (!overlay || !body) return;
+
+    let buffs = [];
+
+    // 💡 버튼에서 인수를 여러 개 넘길 필요 없이, 글로벌 state에서 현재 선택된 카드와 페이즈를 직접 읽어옵니다!
+    const currentIdx = state.selectedIdx;
+    const currentPhase = state.selectedPhase || 1;
+
+    if (currentIdx !== null && state.timeline[currentIdx]) {
+        const action = state.timeline[currentIdx];
+        
+        // 💡 핵심: 스냅샷 데이터를 가져올 때, 원본 참조가 꼬이지 않게 완전히 분리된 복사본을 가져옵니다.
+        if (action.phaseEnterStates && action.phaseEnterStates[currentPhase] && action.phaseEnterStates[currentPhase].buffs) {
+            buffs = JSON.parse(JSON.stringify(action.phaseEnterStates[currentPhase].buffs));
+        } else {
+            // 스냅샷이 없다면 라이브 데이터를 참조
+            const unit = state.unitData.find(u => String(u.unit_id) === String(unitId));
+            if (unit && unit.modifiers) {
+                buffs = JSON.parse(JSON.stringify(unit.modifiers.list));
+            }
+        }
+    }
+
+    // 버프가 하나도 없을 때의 렌더링
+    if (buffs.length === 0) {
+        body.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 30px 10px; font-size: 14px;">현재 적용된 버프/디버프가 없습니다.</div>`;
+    } else {
+        // 실제 버프 데이터 순회하며 HTML 조립
+        let html = '';
+        buffs.forEach(buff => {
+            const isDebuff = buff.type === 'DEBUFF';
+            const borderColor = isDebuff ? '#ef4444' : '#34d399'; // 디버프는 빨강, 버프는 초록
+            const titleColor = isDebuff ? '#ef4444' : '#34d399';
+            
+            // 남은 턴 수 표기 방어 로직
+            const durationText = (buff.duration === Infinity || buff.duration === undefined) ? '무한 지속' : `${buff.duration}턴 남음`;
+
+            // 설명이 명시되어 있지 않으면 스탯 증감치라도 보여주도록 임시 텍스트 생성
+            let descText = buff.desc || "";
+            if (!descText && buff.stats) {
+                descText = Object.entries(buff.stats).map(([k, v]) => `${k}: ${v}`).join(', ');
+            }
+            if (!descText) descText = '특수 상태 부여 효과입니다.';
+
+            html += `
+            <div style="background: rgba(30, 41, 59, 0.7); border-left: 3px solid ${borderColor}; border-radius: 4px; padding: 12px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span style="font-weight: bold; color: ${titleColor}; font-size: 14px;">[${buff.name || buff.id}]</span>
+                    <span style="font-size: 12px; color: #94a3b8;">⏳ ${durationText}</span>
+                </div>
+                <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+                    ${descText}
+                </div>
+            </div>
+            `;
+        });
+        body.innerHTML = html;
+    }
+
+    // 모달 띄우기
+    overlay.style.display = 'flex';
+};
+
+window.closeBuffModal = function() {
+    const overlay = document.getElementById('buff-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+};

@@ -22,7 +22,8 @@ export const EventHook = {
     ABILITY_END: 'ABILITY_END',     // 💡 추가됨
     ACTION_END: 'ACTION_END',
     TURN_END: 'TURN_END',
-    HEAL_DONE: 'HEAL_DONE'
+    HEAL_DONE: 'HEAL_DONE',
+    DAMAGE_TAKEN: 'DAMAGE_TAKEN'
 };
 
 export class EventListener {
@@ -191,14 +192,19 @@ export class ModifierManager {
 
         const existing = this.list.find(m => m.id === modifierConfig.id);
         if (existing) {
-            existing.duration = Math.max(existing.duration, duration);
-            existing.hasSeenTurnStart = false; // 갱신 시 버프 연장 혜택 초기화
+            existing.hasSeenTurnStart = false
+            // 💡 판단 안 함, 계산 안 함. 그냥 전체 교체.
+            Object.assign(existing, modifierConfig);
             
             if (contextLogs) {
                 const logDuration = existing.duration === Infinity ? "무한" : `${existing.duration}턴`;
-                contextLogs.push({ sourceName: "상태 갱신", message: `[${existing.name}] 지속 시간 갱신 (${logDuration})` });
+                contextLogs.push({ 
+                    sourceName: "상태 갱신", 
+                    message: `[${existing.name}] 지속 시간 갱신 (${logDuration})` 
+                });
             }
         } else {
+            // 💡 기존 버프가 없으면 신규 생성
             const newMod = new Modifier({
                 ...modifierConfig,
                 duration: duration

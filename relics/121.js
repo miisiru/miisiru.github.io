@@ -16,7 +16,6 @@ export const relic121 = [
             
             // 2. 스택 계산 (없으면 1, 있으면 +1 하되 최대 2)
             const newStack = existing ? Math.min(existing.stack + 1, 2) : 1;
-            
             // 3. [야화 광추 패턴 적용] 스택 기반 스탯 계산 및 갱신
             context.addModifier(context.target.unit_id, {
                 id: 'Relic_121_Sub',
@@ -24,10 +23,13 @@ export const relic121 = [
                 type: 'BUFF',
                 duration: 2,
                 stack: newStack, // 💡 스택 정보를 버프 인스턴스에 저장
-                stats: { crit_dmg_boost: newStack * 0.18 }, // 💡 스택별 스탯 계산
+                stats: { cd_boost: newStack * 0.18 }, // 💡 스택별 스탯 계산
                 sourceId: context.caster.unit_id
             });
-            
+
+            const currentBuffs = context.target.modifiers.list.filter(m => m.id === 'Relic_121_Sub');
+            console.log("=== 사제 유물 현재 장부 버프 목록 ===", currentBuffs);
+
             context.log(`${context.target.name}에게 [사제] 버프 부여/갱신 (스택: ${newStack}, 치피 +${newStack * 18}%)`, "유물 패시브");
         }
     })

@@ -228,10 +228,55 @@ function recalculate() {
             
             chargeEnergy: (target, baseAmt, reason, applyErr = true) => chargeUnitEnergy(target, baseAmt, reason, baseContext, applyErr),
             
+            // 🎯 [신규] 모든 유닛의 속도 변동을 감지하고 AV와 대기열(eventQueue)을 재정렬하는 함수
+            syncSpeedAndAV: () => {
+                let queueNeedsSort = false;
+
+                simUnits.forEach(target => {
+                    if (target._cached_speed === undefined) target._cached_speed = target.current_speed;
+                    
+                    let oldSpd = target._cached_speed;
+                    let newSpd = target.current_speed;
+
+                    // 속도가 0.001이라도 달라졌다면 재계산 돌입
+                    if (oldSpd !== newSpd) {
+                        // 방어 로직: 속도가 0 이하로 떨어지는 것 방지
+                        newSpd = Math.max(1, newSpd); 
+
+                        // 1. 기존 속도 기준 잔여 행동 게이지(거리) 산출
+                        let remaining_av = Math.max(0, target.current_action_value - currentEvent.av);
+                        let remaining_gauge = remaining_av * oldSpd; 
+                        
+                        // 2. 새로운 속도 기준 남은 시간(AV) 재계산 및 목표 AV 절대 시간 설정
+                        target.current_action_value = currentEvent.av + (remaining_gauge / newSpd);
+                        target._cached_speed = newSpd; // 캐시 최신화
+                        
+                        // 3. 엔진 대기열(eventQueue)에 있는 타겟의 스케줄 수정
+                        const targetEvent = eventQueue.find(e => e.eventType === 'TURN' && e.unitId === target.unit_id);
+                        if (targetEvent) {
+                            targetEvent.av = target.current_action_value;
+                            queueNeedsSort = true;
+                        }
+                        
+                        // 로그로 변화 기록
+                        baseContext.log(`[${target.name}] 속도 변동 (${oldSpd.toFixed(1)} ➡️ ${newSpd.toFixed(1)})으로 대기 시간 재조정`, "시스템");
+                    }
+                });
+
+                // 누군가의 AV가 바뀌었다면 타임라인 큐를 다시 정렬
+                if (queueNeedsSort) {
+                    eventQueue.sort((a, b) => a.av === b.av ? a.queueId - b.queueId : a.av - b.av);
+                }
+            },
+
+            // 🎯 [수정] 버프가 추가될 때 즉시 속도 동기화 함수를 호출하도록 연동!
             addModifier: (targetId, config) => {
                 const target = simUnits.find(u => u.unit_id === targetId);
                 if (target) {
                     target.modifiers.add(config, baseContext.targetLogsArray);
+                    
+                    // 버프 추가 직후 (메신저 세트, 곽향 1돌 등으로 인해) 속도가 변했을 수 있으니 큐를 정리합니다.
+                    baseContext.syncSpeedAndAV(); 
                 }
             },
 
@@ -242,7 +287,7 @@ function recalculate() {
 
                 let originalAV = target.current_action_value; 
                 
-                target.adjust_action_guage(percent / 100, 0, currentEvent.av);
+                target.adjust_action_gauge(percent / 100, 0, currentEvent.av);
                 target.lastAdvancedAV = currentEvent.av;
                 
                 // 🔥 [핵심]: 대기열에 있든 무대(현재 턴)에 있든, '당겨지기 직전 AV'를 기반으로 한 우선순위 번호표를 몸에 새깁니다!
@@ -263,13 +308,9 @@ function recalculate() {
                 let target = typeof targetIdOrObj === 'object' ? targetIdOrObj : simUnits.find(u => String(u.unit_id) === String(targetIdOrObj));
                 if (!target) return;
 
-                // (안전 장치) 캐릭터 초기화 시 HP가 설정되지 않았을 경우를 대비한 기본값
-                if (typeof target.max_hp === 'undefined') target.max_hp = 3000;
-                if (typeof target.current_hp === 'undefined') target.current_hp = target.max_hp;
-
                 let oldHp = target.current_hp;
                 
-                // 💡 확장 포인트: 나중에 HEAL_START 이벤트를 구현하면 여기서 '치유량 보너스' 합산 가능
+                // 💡 확장 포인트: 여기서 '치유량 보너스' 합산 가능
                 let finalHealAmt = baseAmt; 
 
                 // 2. 실제 체력 회복 (최대 체력 초과 방지)
@@ -288,6 +329,43 @@ function recalculate() {
                     healSource: sourceName
                 };
                 broadcastEvent(EventHook.HEAL_DONE, healContext);
+            },
+            takeDamage: (targetId, enemyAtk, multiplier, sourceName = "적 공격") => {
+                const target = simUnits.find(u => String(u.unit_id) === String(targetId));
+                if (!target) return;
+
+                const oldHp = target.current_hp;
+                
+                // 🛡️ 공식 대입: 적 공격력 * 계수 * [1 - {방어력 / (방어력 + 1150)}]
+                const targetDef = target.def; // 실시간 Getter를 통해 버프가 반영된 방어력 호출
+                const dmgMitigation = 1 - (targetDef / (targetDef + 1150));
+                
+                // 최종 데미지 계산 (소수점 아래는 깔끔하게 반올림 처리)
+                let finalDamage = Math.round(enemyAtk * multiplier * dmgMitigation);
+                if (finalDamage < 0) finalDamage = 0;
+
+                // 실시간 체력 차감 (최하 0)
+                target.current_hp = Math.max(0, oldHp - finalDamage);
+                
+                // 엔진 장부에 로그 기록
+                baseContext.log(`[${target.name}] 피격당함 💥 -${finalDamage} Damage (현재: ${target.current_hp.toFixed(1)}/${target.max_hp.toFixed(1)})`, sourceName);
+
+                // 💀 캐릭터 체력이 0이 되었을 때 (사망 처리 대기선)
+                if (target.current_hp <= 0) {
+                    baseContext.log(`[${target.name}]의 체력이 0이 되었습니다!`, "시스템");
+                    
+                    // 🎬 여기에 나중에 [생존 기믹(부활, 1체력 보존 패시브 등)]이나 
+                    // 대기열에서 해당 유닛의 이벤트를 싹 지워버리는 사망 이벤트를 트리거할 수 있습니다.
+                }
+
+                // 🎬 피격 완료 이벤트 방송 (나중에 피격 시 에너지 회복, 피격 시 반격 패시브 연동용)
+                let damageContext = {
+                    ...baseContext,
+                    damageTarget: target,
+                    damageAmount: finalDamage,
+                    damageSource: sourceName
+                };
+                broadcastEvent(EventHook.DAMAGE_TAKEN, damageContext);
             },
 
             simUnits: simUnits,
@@ -429,9 +507,25 @@ function recalculate() {
                     scope: ability.type,
                     abilityUse: (context) => {
                         context.log(`[${actor.name}]의 ${ability.name} 발동! (계수: ${ability.multiplier})`, "적 패턴 공격");
+                        
+                        // 🎯 [핵심] 해석된 타겟(아군) 배열을 순회하며 데미지를 꽂아 넣습니다!
+                        if (context.targets && context.targets.length > 0) {
+                            context.targets.forEach(ally => {
+                                // 💡 actor.atk는 Getter로 연결되어 있으므로 적군의 실시간 공격력을 가져옵니다.
+                                context.takeDamage(ally.unit_id, actor.atk, ability.multiplier, ability.name);
+                            });
+                        } else {
+                            context.log("공격할 대상이 없습니다.", "시스템");
+                        }
                     }
                 };
-                targetUnit = null; // 적의 메인 타겟은 추후 별도 타겟팅 로직에서 지정
+                let aliveAllies = simUnits.filter(u => u.faction === 'ALLY' && u.current_hp > 0);
+                if (aliveAllies.length > 0) {
+                    // 임시: 살아있는 아군 중 랜덤으로 1명 타겟팅 (나중에 어그로/도발 로직으로 교체 가능)
+                    targetUnit = aliveAllies[Math.floor(Math.random() * aliveAllies.length)]; 
+                } else {
+                    targetUnit = null; 
+                }
             }
             else {
                 // 일반 캐릭터는 사용자가 설정한 평/전/궁 계획표를 따름
@@ -505,15 +599,27 @@ function recalculate() {
             // 💡 3. 파이프라인 순차 실행 (정규턴/궁극기 구분 없이 공통 ACTION 연산 하나로 통합!)
             pipeline.forEach(block => {
                 if (block.type === 'CHECKPOINT') {
-                    turnNode.phaseEnterStates[block.phase] = { sp: spManager.current, e: actor.energy };
+                    turnNode.phaseEnterStates[block.phase] = { 
+                        sp: spManager.current, 
+                        e: actor.energy, 
+                        hp: actor.current_hp,
+                        buffs: actor.modifiers.list.map(m => ({ ...m }))
+                    };
                     // 💡 [수정] 추가 턴(Extra Turn)이 아닐 때만 턴 시작/종료 정산을 돌립니다.
                     if (block.phase === 1 && !turnNode.isExtraTurn) {
+                        let phase1Context = createContext(actor, turnNode.listenerLogs[1]);
                         simUnits.forEach(u => u.modifiers.tick('TURN_START', actor.unit_id, turnNode.listenerLogs[1]));
-                        broadcastEvent(EventHook.TURN_START, createContext(actor, turnNode.listenerLogs[1]));
+                        broadcastEvent(EventHook.TURN_START, phase1Context);
+
+                        phase1Context.syncSpeedAndAV();
                     }
                     if (block.phase === 4 && !turnNode.isExtraTurn) {
+                        let phase4Context = createContext(actor, turnNode.listenerLogs[4]);
+
                         simUnits.forEach(u => u.modifiers.tick('TURN_END', actor.unit_id, turnNode.listenerLogs[4]));
-                        broadcastEvent(EventHook.TURN_END, createContext(actor, turnNode.listenerLogs[4]));
+                        broadcastEvent(EventHook.TURN_END, phase4Context);
+
+                        phase4Context.syncSpeedAndAV();
                     }
                 }
                 else if (block.type === 'GAUGE_RESET') {
@@ -673,16 +779,17 @@ function updateCurrentAction(type) {
     }
 }
 
-// script.js 내의 selectCard 함수를 이렇게 수정하세요
 function selectCard(idx) {
     if (state.selectedIdx === idx) {
         state.selectedIdx = null;
         state.selectedPhase = null; // 접힐 때 페이즈 선택 초기화
+        state.selectedSubEventId = null;
     } else {
         state.selectedIdx = idx;
-        state.selectedPhase = null; // 새로운 카드 선택 시 이전 페이즈 초기화
+        state.selectedPhase = 1; // 새로운 카드 선택 시 이전 페이즈 초기화
+        state.selectedSubEventId = null;
+        selectPhase(state.selectedPhase);
     }
-    selectPhase(state.selectedPhase);
     render(); 
 }
 
@@ -1222,6 +1329,92 @@ function render() {
                 document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
                 document.getElementById('energy-text-val').textContent = `${(action.afterEnergy || 0).toFixed(2)}/${unit.max_energy.toFixed(2)}`;
                 document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
+            }
+        }
+
+        const inspectorContainer = document.getElementById('status-inspector-container');
+        if (inspectorContainer) {
+            if (state.selectedIdx === null || isGlobal || action.isCountdown) {
+                inspectorContainer.innerHTML = '';
+            } else {
+                const unit = state.unitData.find(u => u.unit_id === action.unitId);
+                const pNum = state.selectedPhase || 1; // 선택된 페이즈가 없으면 1(Turn Start)을 기본으로 함
+                const pNames = ["", "Turn Start", "Action Start", "Action End", "Turn End"];
+                
+                // 💡 [핵심] 해당 페이즈에서 찍어둔 스냅샷 데이터를 불러옵니다. 없으면 현재 유닛 상태 대체
+                const pState = action.phaseEnterStates && action.phaseEnterStates[pNum] 
+                               ? action.phaseEnterStates[pNum] 
+                               : { sp: action.beforeSp || 0, e: action.beforeEnergy || 0, hp: unit.current_hp };
+
+                // 데이터 안전 세팅
+                const maxHp = unit.max_hp || 3500;
+                const currHp = pState.hp !== undefined ? pState.hp : unit.current_hp;
+                const maxEnergy = unit.max_energy || 100;
+                const currEnergy = pState.e || 0;
+                const isEnemy = unit.archetype === 'ENEMY';
+
+                const buffList = pState.buffs || (unit.modifiers ? unit.modifiers.list : []);
+                const buffCount = buffList.length;
+
+                let portraitPath = isEnemy ? `imgs/enemies/${unit.unit_id}.png` : `imgs/avatarroundicon/${unit.unit_id}.png`;
+                let primaryColor = isEnemy ? '#ef4444' : '#38bdf8'; // 적은 빨강, 아군은 파랑
+
+                // 🎨 레퍼런스 이미지를 고증한 UI HTML 템플릿
+                inspectorContainer.innerHTML = `
+                <div style="display: flex; flex-direction: column; background: rgba(15, 23, 42, 0.6); border-radius: 8px; padding: 16px; border: 1px solid rgba(51, 65, 85, 0.8); color: #e2e8f0; backdrop-filter: blur(4px); box-sizing: border-box; overflow: hidden;">
+                    
+                    <div style="display: flex; gap: 16px; margin-bottom: 12px; align-items: center; flex-shrink: 0;">
+                        <img src="${portraitPath}" style="width: 70px; height: 70px; border-radius: 50%; border: 2px solid ${primaryColor}; object-fit: cover; background: #0f172a; flex-shrink: 0;">
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px;">
+                                <div style="font-size: 15px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <span style="color: ${primaryColor};">${unit.name}</span> 
+                                    <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">| ${pNames[pNum]}</span>
+                                </div>
+                                <div style="font-size: 13px; font-weight: bold; flex-shrink: 0; margin-left: 8px;">AV ${action.av.toFixed(2)}</div>
+                            </div>
+                            
+                            <div style="margin-bottom: 6px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; color: #cbd5e1;">
+                                    <span>HP</span>
+                                    <span>${currHp.toFixed(1)} / ${maxHp.toFixed(1)}</span>
+                                </div>
+                                <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; overflow: hidden; border: 1px solid #334155;">
+                                    <div style="width: ${(currHp/maxHp)*100}%; height: 100%; background: #ef4444; box-shadow: 0 0 5px #ef4444;"></div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: ${isEnemy ? 'none' : 'block'};">
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; color: #cbd5e1;">
+                                    <span>Energy</span>
+                                    <span>${currEnergy.toFixed(2)} / ${maxEnergy.toFixed(2)}</span>
+                                </div>
+                                <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; overflow: hidden; border: 1px solid #334155;">
+                                    <div style="width: ${(currEnergy/maxEnergy)*100}%; height: 100%; background: #38bdf8; box-shadow: 0 0 5px #38bdf8;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px; margin-bottom: 12px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid #1e293b; flex-shrink: 0;">
+                        <div style="display: flex; justify-content: space-between;"><span>⚔️ 공격력</span> <span>1200 <span style="color:#38bdf8">+450</span></span></div>
+                        <div style="display: flex; justify-content: space-between;"><span>🛡️ 방어력</span> <span>900 <span style="color:#38bdf8">+120</span></span></div>
+                        <div style="display: flex; justify-content: space-between;"><span>👟 속도</span> <span>100 <span style="color:#38bdf8">+34</span></span></div>
+                        <div style="display: flex; justify-content: space-between;"><span>🎯 치확</span> <span>75.4%</span></div>
+                        <div style="display: flex; justify-content: space-between;"><span>💥 치피</span> <span>180.2%</span></div>
+                        <div style="display: flex; justify-content: space-between;"><span>🔗 격특</span> <span>120.0%</span></div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; solid rgba(255,255,255,0.1);">
+                        <div style="font-size: 13px; font-weight: bold; color: #94a3b8;">
+                            <span>● 버프 효과 <span style="color:${primaryColor};">${buffCount}</span>개</span>
+                        </div>
+                        <button onclick="window.openBuffModal('${unit.unit_id}')" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 6px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: background 0.2s;">
+                            자세히 보기
+                        </button>
+                    </div>
+                </div>
+                `;
             }
         }
     }
