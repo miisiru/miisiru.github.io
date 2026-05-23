@@ -29,7 +29,7 @@ const robinTalent = new EventListener({
     id: "robin_talent",
     name: "로빈 특성 (아군 공격 시 에너지 회복)",
     hook: EventHook.ATTACK_END,
-    condition: (context) => { return true; },
+    condition: (context) => { return (context.actingUnit.faction === 'ALLY'); },
     effect: (context) => {
         // 💡 우리가 만든 범용 에너지 함수 호출! (ERR 적용 + 상세 로그 자동 출력)
         context.chargeEnergy(context.caster, 2, "로빈 특성"); 

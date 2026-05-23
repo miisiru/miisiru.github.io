@@ -22,38 +22,66 @@ const huohuoTrace1 = new EventListener({
     }
 });
 
-// 🎯 곽향 특성 (턴 시작 감지): 누군가 턴을 시작할 때, 양명이 있다면 에너지 2 회복
+const huohuoTrace3 = new EventListener({
+    id: "huohuo_trace_3",
+    name: "곽향 추가 능력 3",
+    hook: EventHook.HEAL_DONE, // 누군가 힐을 받았을 때
+    priority: 0,
+    condition: (context) => {
+        // 방금 발생한 힐의 출처가 곽향의 '특성 (양명)'인지 확인
+        return context.healSource === "특성 (양명)";
+    },
+    effect: (context) => {
+        // 치유가 발생할 때마다 곽향 본인에게 에너지 1 회복
+        context.chargeEnergy(context.caster, 1, "추가 능력 3 (겁쟁이 구원)");
+    }
+});
+
 const huohuoTalentTurn = new EventListener({
     id: "huohuo_talent_turn",
-    name: "곽향 특성 (턴 시작)",
+    name: "곽향 특성 (턴 시작 힐)",
     hook: EventHook.TURN_START,
     priority: 0,
     condition: (context) => {
-        // 💡 곽향 본인(caster)이 '양명' 상태인지 검사
-        return context.caster.modifiers.list.some(m => m.id === 'huohuo_yangmyung');
+        return context.caster.modifiers.list.some(m => m.id === 'huohuo_yangmyung') && context.actingUnit.faction === 'ALLY';
     },
-    effect: (context) => {
-        // 💡 턴을 맞이한 아군(actingUnit)에게 에너지 2pt 부여
-        context.chargeEnergy(context.caster, 2, "특성 (양명)");
-    }
+    effect: (context) => triggerYangmingHeal(context)
 });
 
-// 🎯 곽향 특성 (궁극기 감지): 누군가 스킬/궁을 쓸 때, 양명이 있다면 에너지 2 회복
 const huohuoTalentUlt = new EventListener({
     id: "huohuo_talent_ult",
-    name: "곽향 특성 (궁극기 발동)",
+    name: "곽향 특성 (궁극기 발동 힐)",
     hook: EventHook.ABILITY_START,
     priority: 0,
     condition: (context) => {
-        // 💡 방금 발동한 능력이 궁극기(ULT)이고, 곽향에게 양명이 있는지 검사
-        return context.actionType === 'ULT' && context.caster.modifiers.list.some(m => m.id === 'huohuo_yangmyung');
+        return context.actionType === 'ULT' && context.caster.modifiers.list.some(m => m.id === 'huohuo_yangmyung') && context.actingUnit.faction === 'ALLY';
     },
-    effect: (context) => {
-        // 💡 궁극기를 쓴 아군(actingUnit)에게 에너지 2pt 부여
-        context.chargeEnergy(context.caster, 2, "특성 (양명)");
-    }
+    effect: (context) => triggerYangmingHeal(context)
 });
 
+function triggerYangmingHeal(context) {
+    const huohuo = context.caster;
+    const triggerUnit = context.actingUnit;
+    const healAmt = (huohuo.max_hp * 0.045) + 120; // 4.5% + 120
+
+    // 1. 체력 비율이 가장 낮은 아군 찾기
+    const allies = context.simUnits.filter(u => u.faction === 'ALLY');
+    const lowestHpUnit = allies.reduce((prev, curr) => (prev.current_hp / prev.max_hp) < (curr.current_hp / curr.max_hp) ? prev : curr);
+
+    // 2. 발동자와 최저 체력 아군에게 힐 (Set을 통해 동일 인물일 경우 중복 힐 1회로 압축)
+    const targetsToHeal = [triggerUnit, lowestHpUnit];
+    targetsToHeal.forEach(target => {
+        context.heal(target, healAmt, "특성 (양명)"); 
+    });
+
+    // 3. 체력 50% 이하인 다른 아군들 추가 힐
+    // 이미 힐을 받은 대상도 50% 이하라면 또 힐을 받음 (중복 제외 로직 삭제)
+    allies.forEach(ally => {
+        if ((ally.current_hp / ally.max_hp) <= 0.5) {
+            context.heal(ally, healAmt, "특성 (양명)");
+        }
+    });
+}
 
 const huokit = new UnitKit(
     new ActionConfig({ name: "평타", sp_gain: 1, energy_gain: 20, tags: ['attack'] }),
@@ -65,13 +93,29 @@ const huokit = new UnitKit(
         faction: 'ALLY',
         scope: 'BLAST',
         abilityUse: (context) => {
-            // 전스 사용 시 곽향 본인에게 양명 3턴 갱신
-            context.addModifier(context.actingUnit.unit_id, {
+            const huohuo = context.actingUnit;
+            const mainTarget = context.targets[0]; // 타겟 해석기가 넘겨준 첫 번째 배열 값이 메인 타겟
+            
+            // 1. 디버프 해제 (차후 구현을 위해 로그만 남김)
+            context.log(`[${mainTarget.name}]의 디버프 1개 해제`, "곽향 전투 스킬");
+
+            // 2. 메인 타겟 힐 (24% + 640)
+            const mainHealAmt = (huohuo.max_hp * 0.24) + 640;
+            context.heal(mainTarget, mainHealAmt, "곽향 전투 스킬");
+
+            // 3. 인접 타겟 힐 (19.2% + 512)
+            const adjHealAmt = (huohuo.max_hp * 0.192) + 512;
+            for (let i = 1; i < context.targets.length; i++) {
+                context.heal(context.targets[i], adjHealAmt, "곽향 전투 스킬 (인접)");
+            }
+
+            // 4. 자신에게 양명 3턴 갱신
+            context.addModifier(huohuo.unit_id, {
                 id: 'huohuo_yangmyung',
                 name: '양명',
                 type: 'BUFF',
                 duration: 3,
-                sourceId: context.actingUnit.unit_id,
+                sourceId: huohuo.unit_id,
                 tickOn: 'TURN_START'
             });
             context.log("자신에게 [양명] 상태 부여 (3턴)", "곽향 전투 스킬");
@@ -124,5 +168,6 @@ const huokit = new UnitKit(
 export const Huohuo = new Unit({unit_id: 1217, kit: huokit, rotation: {initial: [], repeat: ['B']}})
 
 Huohuo.registerListener(huohuoTrace1);
+Huohuo.registerListener(huohuoTrace3); // 💡 신규 등록
 Huohuo.registerListener(huohuoTalentTurn);
 Huohuo.registerListener(huohuoTalentUlt);

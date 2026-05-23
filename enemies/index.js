@@ -1,0 +1,1 @@
+export { enemy1004020 } from './1004020.js'

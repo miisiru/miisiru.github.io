@@ -21,7 +21,8 @@ export const EventHook = {
     ATTACK_END: 'ATTACK_END',       // 💡 추가됨
     ABILITY_END: 'ABILITY_END',     // 💡 추가됨
     ACTION_END: 'ACTION_END',
-    TURN_END: 'TURN_END'
+    TURN_END: 'TURN_END',
+    HEAL_DONE: 'HEAL_DONE'
 };
 
 export class EventListener {

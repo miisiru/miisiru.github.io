@@ -4,6 +4,7 @@ import { gameData, subStatData, mainStatData } from './config.js';
 import { LightCone } from './lc.js'
 import { Unit } from './character.js'
 import * as Relics from './relics/index.js';
+import * as Enemies from './enemies/index.js';
 
 function getRelicAbilities(relicsData) {
     if (!relicsData || !relicsData.sets) return [];
@@ -129,6 +130,15 @@ function buildInitialTimeline() {
         return u;
     });
 
+    if (!state.unitData.find(u => u.unit_id === 1004020)) {
+        let enemyObj = Enemies.enemy1004020;
+        state.unitData.push(enemyObj);
+        
+        // 💡 적군은 사용자 UI 장부가 필요 없지만, 렌더링 엔진이 뻗지 않도록 껍데기 배열을 채워줍니다.
+        state.actionPlans[enemyObj.unit_id] = new Array(100).fill("BASIC");
+        state.actionTargets[enemyObj.unit_id] = new Array(100).fill(null);
+    }
+
     state.timeline = [];
 
     state.insertedEvents = []; 
@@ -248,6 +258,38 @@ function recalculate() {
                 baseContext.log(`[${target.name}] 행동 게이지 ${percent}% 증가`, sourceName);
             },
 
+            heal: (targetIdOrObj, baseAmt, sourceName) => {
+                // 1. 타겟 객체 확보 (ID 문자열이 들어오든, 객체 자체가 들어오든 유연하게 처리)
+                let target = typeof targetIdOrObj === 'object' ? targetIdOrObj : simUnits.find(u => String(u.unit_id) === String(targetIdOrObj));
+                if (!target) return;
+
+                // (안전 장치) 캐릭터 초기화 시 HP가 설정되지 않았을 경우를 대비한 기본값
+                if (typeof target.max_hp === 'undefined') target.max_hp = 3000;
+                if (typeof target.current_hp === 'undefined') target.current_hp = target.max_hp;
+
+                let oldHp = target.current_hp;
+                
+                // 💡 확장 포인트: 나중에 HEAL_START 이벤트를 구현하면 여기서 '치유량 보너스' 합산 가능
+                let finalHealAmt = baseAmt; 
+
+                // 2. 실제 체력 회복 (최대 체력 초과 방지)
+                target.current_hp = Math.min(target.max_hp, oldHp + finalHealAmt);
+                let actualHeal = target.current_hp - oldHp;
+
+                // 3. 엔진 장부에 로그 기록
+                baseContext.log(`[${target.name}] HP ${finalHealAmt.toFixed(1)} 회복 (현재: ${target.current_hp.toFixed(1)}/${target.max_hp.toFixed(1)})`, sourceName);
+
+                // 4. 🎬 힐 완료 이벤트 방송 (곽향 추가 능력 3 등 트리거)
+                // 힐러, 힐 대상, 힐 출처 등의 정보를 담은 새로운 전용 컨텍스트를 만들어 방송합니다.
+                let healContext = {
+                    ...baseContext,
+                    healTarget: target,
+                    healAmount: actualHeal,
+                    healSource: sourceName
+                };
+                broadcastEvent(EventHook.HEAL_DONE, healContext);
+            },
+
             simUnits: simUnits,
             eventQueue: eventQueue,
             actingUnit: actingUnit, 
@@ -364,6 +406,8 @@ function recalculate() {
             actor.lastAdvancedAV = -1; // 행동 시작 시 행게증 우선권 초기화
 
             let isCountdown = actor.archetype === 'COUNTDOWN';
+            let isEnemy = actor.archetype === 'ENEMY'; // 🎯 [신규] 적군 판별
+
             let actionType = "BASIC";
             let mainKit = null;
             let targetUnit = null
@@ -372,7 +416,24 @@ function recalculate() {
                 // 카운트다운은 사용자 actionPlans 장부가 없으므로 강제로 전용 스크립트 지정
                 actionType = "COUNTDOWN";
                 mainKit = actor.kit.basic; 
-            } else {
+            } else if (isEnemy) {
+                // 🎯 [신규] 적군 행동 로직 (패턴 사전에서 스킬을 꺼내옵니다)
+                let ability = actor.getNextAbility();
+                actionType = ability.type; // 'SINGLE', 'BLAST' 등
+                
+                // 💡 엔진이 아군 스킬처럼 읽을 수 있게 1회용 껍데기 키트(Kit) 생성
+                mainKit = {
+                    name: ability.name,
+                    tags: ['attack'], 
+                    faction: 'ALLY',   // 적군의 타겟 풀은 아군(ALLY)
+                    scope: ability.type,
+                    abilityUse: (context) => {
+                        context.log(`[${actor.name}]의 ${ability.name} 발동! (계수: ${ability.multiplier})`, "적 패턴 공격");
+                    }
+                };
+                targetUnit = null; // 적의 메인 타겟은 추후 별도 타겟팅 로직에서 지정
+            }
+            else {
                 // 일반 캐릭터는 사용자가 설정한 평/전/궁 계획표를 따름
                 let planArray = state.actionPlans[actor.unit_id] || [];
                 actionType = planArray[currentEvent.turnCount] || "BASIC";
@@ -444,6 +505,7 @@ function recalculate() {
             // 💡 3. 파이프라인 순차 실행 (정규턴/궁극기 구분 없이 공통 ACTION 연산 하나로 통합!)
             pipeline.forEach(block => {
                 if (block.type === 'CHECKPOINT') {
+                    turnNode.phaseEnterStates[block.phase] = { sp: spManager.current, e: actor.energy };
                     // 💡 [수정] 추가 턴(Extra Turn)이 아닐 때만 턴 시작/종료 정산을 돌립니다.
                     if (block.phase === 1 && !turnNode.isExtraTurn) {
                         simUnits.forEach(u => u.modifiers.tick('TURN_START', actor.unit_id, turnNode.listenerLogs[1]));
@@ -453,7 +515,6 @@ function recalculate() {
                         simUnits.forEach(u => u.modifiers.tick('TURN_END', actor.unit_id, turnNode.listenerLogs[4]));
                         broadcastEvent(EventHook.TURN_END, createContext(actor, turnNode.listenerLogs[4]));
                     }
-                    turnNode.phaseEnterStates[block.phase] = { sp: spManager.current, e: actor.energy };
                 }
                 else if (block.type === 'GAUGE_RESET') {
                     // 🔥 추가 턴(Extra Turn)이 아닐 경우에만 턴 카운트를 올리고 다음 행동 게이지를 채웁니다.
@@ -599,6 +660,9 @@ function updateCurrentAction(type) {
     if (state.selectedIdx === null) return;
     let action = state.timeline[state.selectedIdx];
     if (action.type === 'Ult') return;
+
+    let actor = state.unitData.find(u => u.unit_id === action.unitId);
+    if (actor && actor.archetype === 'ENEMY') return;
 
     let unitActions = state.timeline.filter(a => a.unitId === action.unitId && a.type !== 'Ult');
     let nth = unitActions.indexOf(action);
@@ -835,9 +899,14 @@ function render() {
 
         const isGlobal = item.unitId === 'SYSTEM';
         const unit = (isGlobal || item.isCountdown) ? null : state.unitData.find(u => u.unit_id === item.unitId);
-        const actionConfig = isGlobal ? { name: item.title } : (item.isCountdown ? { name: item.actionName } : ((item.type === 'S') ? unit.kit.skill : (item.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic)));
+        const actionConfig = { name: isGlobal ? item.title : item.actionName };
         const isSelected = state.selectedIdx === idx;
-        const imagePath = isGlobal ? `imgs/avatarshopicon/1001.png` : `imgs/avatarshopicon/${item.unitId}.png`;
+        let imagePath = `imgs/avatarshopicon/1001.png`;
+        if (!isGlobal && unit) {
+            imagePath = unit.archetype === 'ENEMY' 
+                ? `imgs/enemies/${item.unitId}.png` 
+                : `imgs/avatarshopicon/${item.unitId}.png`;
+        }
 
         const wrapper = document.createElement('div');
         wrapper.className = 'action-card-wrapper';
@@ -909,6 +978,9 @@ function render() {
         
         if (isGlobal) {
             div.style.cssText = 'border: 2px solid #475569; background: rgba(30, 41, 59, 0.45); box-shadow: none;';
+        }
+        else if (unit && unit.archetype === 'ENEMY') {
+            div.style.borderLeft = '4px solid #ef4444'; // HSR 스타일의 붉은색 포인트
         }
         
         let cardHtml = `
@@ -1140,11 +1212,17 @@ function render() {
             document.getElementById('energy-fill').style.width = `0%`;
         } else {
             const unit = state.unitData.find(u => u.unit_id === action.unitId);
-            const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
 
-            document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
-            document.getElementById('energy-text-val').textContent = `${(action.afterEnergy || 0).toFixed(2)}/${unit.max_energy.toFixed(2)}`; // 💡 .toFixed(2) 보정
-            document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
+            if (unit.archetype === 'ENEMY' || action.isCountdown) {
+                document.getElementById('focus-name').textContent = action.name + " - " + action.actionName;
+                document.getElementById('energy-text-val').textContent = `-/-`;
+                document.getElementById('energy-fill').style.width = `0%`;
+            } else {
+                const kit = (action.type === 'S') ? unit.kit.skill : (action.type === 'Ult' ? unit.kit.ultimate : unit.kit.basic);
+                document.getElementById('focus-name').textContent = action.name + " - " + kit.name;
+                document.getElementById('energy-text-val').textContent = `${(action.afterEnergy || 0).toFixed(2)}/${unit.max_energy.toFixed(2)}`;
+                document.getElementById('energy-fill').style.width = `${((action.afterEnergy || 0) / unit.max_energy) * 100}%`;
+            }
         }
     }
 }

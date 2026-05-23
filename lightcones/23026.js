@@ -7,7 +7,7 @@ export const lc23026 = [
         name: "광추 [야화] (노래 획득 감지)",
         hook: EventHook.ATTACK_START, // 원작 데이터 명세 고증
         priority: 10,
-        condition: (context) => true,
+        condition: (context) => (context.actingUnit.faction === 'ALLY'),
         effect: (context) => {
             const wearer = context.caster;
             

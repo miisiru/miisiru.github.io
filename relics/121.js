@@ -7,7 +7,7 @@ export const relic121 = [
         hook: EventHook.ABILITY_START,
         priority: 0,
         // 액션 타입이 스킬이거나 궁극기일 때만 발동
-        condition: (context) => ['S', 'ULT'].includes(context.actionType),
+        condition: (context) => ['S', 'ULT'].includes(context.actionType) && context.actingUnit.unit_id === context.caster.unit_id,
         effect: (context) => {
             if (!context.target) return;
 

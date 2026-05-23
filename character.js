@@ -13,8 +13,8 @@ export function action_value_from_spd(spd) {
 }
 
 export class Unit {
-    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0, rotation={initial: [], repeat: ['B']}, side=Side.ALLY, archetype=Archetype.CHARACTER}) {
-        this.side = side
+    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0, rotation={initial: [], repeat: ['B']}, faction=Side.ALLY, archetype=Archetype.CHARACTER}) {
+        this.faction = faction
         this.archetype = archetype
         
         this.unit_id = unit_id;
