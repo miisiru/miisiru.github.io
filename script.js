@@ -64,8 +64,6 @@ if (!state.lightConeDetails) {
     }));
 }
 
-document.getElementById('uid-load-btn').addEventListener('click', loadUserData);
-
 window.buildInitialTimeline = buildInitialTimeline;
 window.selectCard = selectCard;
 window.updateCurrentAction = updateCurrentAction;
@@ -147,11 +145,13 @@ function buildInitialTimeline() {
     recalculate();
 }
 
-function recalculate() {
+export function recalculate() {
     const limit = parseFloat(document.getElementById('limit-av').value) || 1000;
     const spManager = new SkillPointManager(3, 5, 0);
     let newTimeline = [];
     let currentEvent = null;
+
+    state.damageReport = { total: 0, byCharacter: {} };
 
     let queueGlobalCounter = 0;
     let currentWave = 1;
@@ -364,6 +364,131 @@ function recalculate() {
                     damageTarget: target,
                     damageAmount: finalDamage,
                     damageSource: sourceName
+                };
+                broadcastEvent(EventHook.DAMAGE_TAKEN, damageContext);
+            },
+
+            dealDamage: (targetId, customKit = null, customTags = null) => {
+                const target = simUnits.find(u => String(u.unit_id) === String(targetId));
+                if (!target) return;
+
+                const attacker = actingUnit;
+                
+                // 💡 스킬 정보와 태그를 가져옵니다. (기본적으로 현재 컨텍스트의 스킬을 따라가되, 추가 공격 등 커스텀 지정 가능)
+                const kit = customKit || extras.kit;
+                const tags = customTags || extras.tags || [];
+
+                if (!kit) return; // 스킬 정보가 없으면 데미지를 계산할 수 없음
+
+                // ==========================================
+                // 🔢 1~8구역: 비치명타 뼈대 데미지 (Non-Crit Skeleton)
+                // ==========================================
+
+                // [구역 1] 기초 데미지 (Base Damage)
+                // 지정된 scalingStat(예: 'atk', 'hp')을 참조. 없으면 기본 'atk' 사용
+                const scalingVal = attacker[kit.scalingStat || 'atk'] || 0; 
+                const baseDamage = (kit.multiplier || 0) * scalingVal; 
+                // (추후 FlatExtraDamage 기믹 추가 시 여기에 합산)
+
+                // [구역 2] 피해 증가 구역 (DMGBoost)
+                // 💡 태그(tags) 필터링을 통해 "필살기 피증", "추공 피증" 등을 알아서 걸러서 가져옵니다!
+                const elemDmgBoost = attacker.modifiers.getStat(`${kit.element}_dmg_boost`, tags) || 0;
+                const allDmgBoost = attacker.modifiers.getStat('dmg_boost', tags) || 0;
+                const dmgBoostMult = 1 + elemDmgBoost + allDmgBoost;
+
+                // [구역 3] 약화 구역 (Weaken)
+                const weakenMult = 1 - (attacker.weaken || 0);
+
+                // [구역 4] 방어력 구역 (DEF)
+                const attackerLv = attacker.level || 80;
+                const targetLv = target.level || 80;
+                const defReduction = target.def_reduction || 0;
+                const defIgnore = attacker.modifiers.getStat('def_ignore', tags) || 0; // 태그 적용 방관 (예: 양자셋)
+                
+                const effectiveDefMod = Math.max(0, 1 - defReduction - defIgnore); // 방깎/방관 합산 (최대 100%)
+                const defMult = (attackerLv + 20) / ((targetLv + 20) * effectiveDefMod + attackerLv + 20);
+
+                // [구역 5] 내성 구역 (RES)
+                // 임시: 적의 기본 내성을 20%(0.2)로 가정. (나중에 몬스터 DB 연동 시 target.base_res로 교체)
+                const targetBaseRes = target.base_res !== undefined ? target.base_res : 0.2;
+                const resPen = attacker.modifiers.getStat('res_pen', tags) || 0;
+                const resReduction = target.res_reduction || 0; 
+                
+                let effectiveRes = targetBaseRes - resPen - resReduction;
+                effectiveRes = Math.max(-1.0, Math.min(0.9, effectiveRes)); // clamp (-100% ~ 90%)
+                const resMult = 1 - effectiveRes;
+
+                // [구역 6] 받는 피해 증가 구역 (Vulnerability)
+                const vulnerability = target.modifiers.getStat('vulnerability', tags) || 0;
+                const vulnerabilityMult = 1 + vulnerability;
+
+                // [구역 7] 피해 감소 구역 (DMGMitigation)
+                const dmgMitigationMult = 1 - (target.dmg_reduction || 0);
+
+                // [구역 8] 격파 구역 (Broken)
+                const brokenMult = 0.9;
+
+                // 🦴 뼈대 데미지 조립 (치명타를 제외한 모든 곱연산 적용)
+                const nonCritSkeleton = baseDamage * dmgBoostMult * weakenMult * defMult * resMult * vulnerabilityMult * dmgMitigationMult * brokenMult;
+
+                // ==========================================
+                // 🎲 구역 9: 치명타 및 다단 히트 (Crit & Hit Split)
+                // ==========================================
+                let finalTotalDamage = 0;
+                
+                // 지속 피해(DOT)나 격파(BREAK) 태그가 있으면 치명타가 터지지 않음
+                const canCrit = !(tags.includes('DOT') || tags.includes('BREAK')); 
+                
+                // 타수 정보가 없으면 단타(1.0)로 처리
+                const hitSplits = kit.hitSplit && kit.hitSplit.length > 0 ? kit.hitSplit : [1.0];
+                
+                // 실시간 치확/치피 + 조건부 치확/치피(태그 필터링) 합산
+                const cr = attacker.cr + (attacker.modifiers.getStat('cr_boost', tags) || 0);
+                const cd = attacker.cd + (attacker.modifiers.getStat('cd_boost', tags) || 0);
+
+                // 🎯 타수(Hit)마다 독립적으로 치명타 주사위를 굴립니다!
+                hitSplits.forEach(hitRatio => {
+                    let critMult = 1.0;
+                    
+                    // 치확은 0~100% 사이로 보정 후 굴림
+                    if (canCrit && Math.random() < Math.max(0, Math.min(1, cr))) {
+                        critMult = 1 + cd; 
+                    }
+                    
+                    finalTotalDamage += nonCritSkeleton * critMult * hitRatio;
+                });
+
+                // 최종 데미지 반올림
+                finalTotalDamage = Math.round(finalTotalDamage);
+
+                // ==========================================
+                // 💥 최종 체력 차감 및 이벤트 방송
+                // ==========================================
+                const oldHp = target.current_hp;
+                target.current_hp = Math.max(0, oldHp - finalTotalDamage);
+                
+                // 타수가 여러 개면 로그에 (X타) 표시
+                const hitText = hitSplits.length > 1 ? ` (${hitSplits.length}타)` : '';
+                baseContext.log(`[${attacker.name}] ➡️ [${target.name}] 💥 ${finalTotalDamage} 피해${hitText}`, kit.name);
+
+                if (attacker.faction === 'ALLY' && target.faction === 'ENEMY') {
+                    state.damageReport.total += finalTotalDamage;
+                    if (!state.damageReport.byCharacter[attacker.name]) {
+                        state.damageReport.byCharacter[attacker.name] = 0;
+                    }
+                    state.damageReport.byCharacter[attacker.name] += finalTotalDamage;
+                }
+
+                if (target.current_hp <= 0) {
+                    baseContext.log(`[${target.name}] 처치됨! 💀`, "시스템");
+                }
+
+                // 피격 이벤트 방송 (에너지 회복 등 연동용)
+                let damageContext = {
+                    ...baseContext,
+                    damageTarget: target,
+                    damageAmount: finalTotalDamage,
+                    damageSource: kit.name
                 };
                 broadcastEvent(EventHook.DAMAGE_TAKEN, damageContext);
             },
@@ -975,7 +1100,7 @@ function updateDetail() {
     document.getElementById('p-turn-start').style.display = (action.isTurn === false) ? 'none' : '';
 }
 
-function render() {
+export function render() {
     const buildLogHtml = (logs, marginLeft) => {
         if (!logs || logs.length === 0) return '';
         const wrapperStyle = `margin: 4px 0 4px ${marginLeft}; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.3); border-left: 3px solid #10b981; border-radius: 4px; color: #6ee7b7; font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.6); backdrop-filter: blur(3px); text-shadow: 0 1px 3px rgba(0,0,0,1);`;

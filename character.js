@@ -13,12 +13,14 @@ export function action_value_from_spd(spd) {
 }
 
 export class Unit {
-    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0, rotation={initial: [], repeat: ['B']}, faction=Side.ALLY, archetype=Archetype.CHARACTER}) {
+    constructor({unit_id, name=undefined, max_energy=undefined, kit, lightcone=undefined, relics=undefined, spd=undefined, eidolon=0, rotation={initial: [], repeat: ['B']}, faction=Side.ALLY, archetype=Archetype.CHARACTER, level=80}) {
         this.faction = faction
         this.archetype = archetype
         
         this.unit_id = unit_id;
         this.name = name ?? gameData.characters[this.unit_id].name
+        this.level = level
+
         this.max_energy = max_energy ?? gameData.characters[this.unit_id].max_sp
         this.element = gameData.characters[this.unit_id].element
         this.rarity = gameData.characters[this.unit_id].rarity
@@ -193,6 +195,9 @@ export class Unit {
     get eres() { return this.displayed_stats.eres + (this.modifiers.getStat('eres_boost') || 0); }
     get be() { return this.displayed_stats.be + (this.modifiers.getStat('be_boost') || 0); }
     get err() { return this.displayed_stats.err + (this.modifiers.getStat('err_boost') || 0); }
+    get def_ignore() { return this.modifiers.getStat('def_ignore') || 0; }
+    get res_pen() { return this.modifiers.getStat('res_pen') || 0; }
+    get vul() { return this.modifiers.getStat('weaken') || 0; }
 
     getDmgBoost(element) {
         const allDmgBoost = this.modifiers.getStat('dmg_boost') || 0;

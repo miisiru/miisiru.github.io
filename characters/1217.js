@@ -127,6 +127,7 @@ const huokit = new UnitKit(
         scope: 'AOE',
         abilityUse: (context) => {
             const huohuoId = context.actingUnit.unit_id;
+            const allAllies = context.simUnits.filter(u => u.faction === 'ALLY')
 
             // 1. 궁극기 사용 시 곽향 본인에게 양명 3턴 갱신
             context.addModifier(huohuoId, {
@@ -139,7 +140,7 @@ const huokit = new UnitKit(
             });
 
             // 2. 동료 전체 주유 및 버프
-            context.targets.forEach(target => {
+            allAllies.forEach(target => {
                 if (target.unit_id !== huohuoId) {
                     // 에너지 최대치의 20% 회복 (ERR 미적용 고정치이므로 false 전달)
                     let recoverAmt = target.max_energy * 0.20;

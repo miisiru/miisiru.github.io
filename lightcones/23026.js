@@ -48,6 +48,8 @@ export const lc23026 = [
             wearer.lc23026_stacks = 0;
             wearer.modifiers.remove('LC_23026_SUB', context.targetLogsArray);
 
+            const allAllies = context.simUnits.filter(u => u.faction === 'ALLY')
+
             // 2) 🎯 [SUB2] 본인 버프 부여 (지속 1턴, 본인 턴 시작 시 차감)
             context.addModifier(wearer.unit_id, {
                 id: 'LC_23026_SUB2',
@@ -60,7 +62,7 @@ export const lc23026 = [
                 
                 // 🔥 [원작 고증 핵심 기믹] SUB2가 수명을 다해 remove될 때 발동할 연쇄 자폭 시퀀스
                 onRemove: (logsArray) => {
-                    context.simUnits.forEach(ally => {
+                    allAllies.forEach(ally => {
                         // 모든 아군에게서 🎯 [SUB3] 무한 버프를 확정 압수
                         ally.modifiers.remove('LC_23026_SUB3', logsArray);
                     });
@@ -72,7 +74,7 @@ export const lc23026 = [
             });
 
             // 3) 🎯 [SUB3] 모든 아군에게 광역 피해 증가 버프 부여 (duration 생략 = 무한 지속)
-            context.simUnits.forEach(ally => {
+            allAllies.forEach(ally => {
                 context.addModifier(ally.unit_id, {
                     id: 'LC_23026_SUB3',
                     name: '카덴차 (아군 피증)',

@@ -28,7 +28,6 @@ export const relic121 = [
             });
 
             const currentBuffs = context.target.modifiers.list.filter(m => m.id === 'Relic_121_Sub');
-            console.log("=== 사제 유물 현재 장부 버프 목록 ===", currentBuffs);
 
             context.log(`${context.target.name}에게 [사제] 버프 부여/갱신 (스택: ${newStack}, 치피 +${newStack * 18}%)`, "유물 패시브");
         }

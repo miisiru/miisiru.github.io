@@ -45,21 +45,38 @@ export class EventListener {
 }
 
 export class ActionConfig {
-    constructor({ name, sp_cost = 0, sp_gain = 0, energy_gain = 0, energy_cost = 0, action_type, skill_type, abilityUse = null, tags=['attack'], faction = 'ENEMY', scope = 'SINGLE' }) {
+    constructor({
+        name,
+        type = 'BASIC',       // 'BASIC', 'S', 'ULT', 'FUA' (평, 전, 궁, 추공)
+        scope = 'SINGLE',     // 'SINGLE', 'BLAST', 'AOE'
+        tags = [],            // ['attack', 'SKILL', 'MULTI_HIT', 'DOT', ... ]
+        
+        // 🎯 [신규] 데미지 계산용 메타데이터
+        scalingStat = 'atk',  // 데미지 기반 스탯 ('atk', 'hp', 'def' 등)
+        multiplier = 0,       // 총 계수 (예: 1.5 = 150%)
+        hitSplit = [1.0],     // 타수 분할 비율 배열 (예: [0.3, 0.3, 0.4])
+        
+        sp_cost = 0,
+        sp_gain = 0,
+        energy_cost = 0,
+        energy_gain = 0,
+        abilityUse = () => {} // 특수 유틸리티 로직 (힐, 버프 부여 등)
+    }) {
         this.name = name;
+        this.type = type;
+        this.scope = scope;
+        this.tags = tags;
+        
+        // 🎯 [신규] 속성 바인딩
+        this.scalingStat = scalingStat;
+        this.multiplier = multiplier;
+        this.hitSplit = hitSplit;
+
         this.sp_cost = sp_cost;
         this.sp_gain = sp_gain;
-        this.energy_gain = energy_gain;
-        this.action_type = action_type;
-        this.skill_type = skill_type;
         this.energy_cost = energy_cost;
-
-        this.faction = faction
-        this.scope = scope;
-        
-        // 💡 특정 캐릭터만의 고유한 타겟팅 로직이나 특수 기믹을 덮어씌울 수 있도록 콜백 허용
-        this.customAbilityUse = abilityUse; 
-        this.tags=tags
+        this.energy_gain = energy_gain;
+        this.customAbilityUse = abilityUse;
     }
 
     // 💡 엔진에서 액션 실행 시 직접 호출할 메서드
@@ -276,31 +293,63 @@ export class ModifierManager {
         }
     }
 
-    getStat(statKey) {
-        return this.list.reduce((sum, mod) => sum + (mod.stats[statKey] || 0), 0);
+    getStat(statKey, actionTags = []) {
+        return this.list.reduce((sum, mod) => {
+            // 1. 해당 스탯을 안 가지고 있으면 패스
+            if (!mod.stats || mod.stats[statKey] === undefined) return sum;
+
+            // 2. 버프에 발동 조건(conditions)이 걸려있다면 검사
+            if (mod.conditions && mod.conditions.length > 0) {
+                // actionTags 중에 버프의 요구 조건 중 하나라도 일치하는지 확인
+                // (예: mod.conditions가 ['ULT'] 인데, actionTags에 'ULT'가 있어야만 적용)
+                const isMatch = mod.conditions.some(cond => actionTags.includes(cond));
+                if (!isMatch) return sum; // 조건 불일치 시 합산 제외
+            }
+
+            // 3. 조건이 없거나 일치한다면 정상 합산
+            return sum + mod.stats[statKey];
+        }, 0);
     }
 }
 
 export function resolveTargets(simUnits, actor, mainTargetId, faction, scope) {
     let targets = [];
     
-    // 1. 피아 식별 (현재는 적군 시스템이 없으므로 임시로 파티원 전체를 아군 풀로 취급)
-    // 향후 적군 객체가 생기면 u.faction === 'ALLY' / 'ENEMY' 로 구분하여 validPool을 짭니다.
-    let validPool = simUnits.filter(u => u.unit_id !== 1309 || u.archetype !== 'COUNTDOWN'); // 카운트다운 같은 시스템 유닛 제외
+    // 1. 피아 식별 전, 시스템 유닛 걸러내기 (기존 로직 유지)
+    // (※ 참고: 기존 코드의 || 연산자는 모두 통과시켜버릴 위험이 있어 && 로 수정했습니다)
+    let basePool = simUnits.filter(u => u.unit_id !== 1309 && u.archetype !== 'COUNTDOWN'); 
 
-    // 2. 범위(Scope)에 따른 타겟 배열 완성
+    // 2. 🎯 진영(필드) 분리 로직 추가
+    let targetFaction = faction; 
+    
+    // 메인 타겟이 지정되어 있다면, 해당 타겟의 진영(faction)을 알아냅니다.
+    if (mainTargetId) {
+        const mainTargetObj = basePool.find(u => String(u.unit_id) === String(mainTargetId));
+        if (mainTargetObj && mainTargetObj.faction) {
+            targetFaction = mainTargetObj.faction;
+        }
+    }
+
+    // 유효 풀(validPool)을 아군/적군 진영으로 좁힙니다. 
+    // (진영 정보가 없다면 기존처럼 전체 풀 유지 -> 에러 방어)
+    let validPool = basePool;
+    if (targetFaction) {
+        validPool = basePool.filter(u => u.faction === targetFaction);
+    }
+
+    // 3. 범위(Scope)에 따른 타겟 배열 완성 (작성해주신 로직 완벽히 동일)
     if (scope === 'SELF') {
         targets = [actor];
     } 
     else if (scope === 'AOE') {
-        targets = [...validPool]; // 해당 진영 전체
+        targets = [...validPool]; // 이제 분리된 진영(validPool) 전체만 타격함!
     } 
     else if (scope === 'SINGLE') {
         const target = validPool.find(u => String(u.unit_id) === String(mainTargetId));
         if (target) targets = [target];
     } 
     else if (scope === 'BLAST') {
-        // 확산 기믹: 메인 타겟을 찾은 뒤, validPool 배열에서의 인덱스를 기준으로 좌/우 유닛을 찾음
+        // 확산 기믹: "진영이 분리된 배열(validPool)"에서의 인덱스를 기준으로 좌/우 유닛을 찾음
         const tIndex = validPool.findIndex(u => String(u.unit_id) === String(mainTargetId));
         if (tIndex !== -1) {
             if (tIndex > 0) targets.push(validPool[tIndex - 1]); // 좌측 타겟

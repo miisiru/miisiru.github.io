@@ -1,7 +1,8 @@
 import { currentLcIdx, tempLcData  } from './lc-modal.js';
 import { currentRelicIdx, tempRelicData } from './relic-modal.js'
-import { state } from './script.js';
+import { state, recalculate, render } from './script.js';
 import { PRESET_UNITS, availableCharacters } from './char.js';
+import { Unit } from './character.js'
 
 const spdDiv = document.getElementById('spd-inputs');
 
@@ -581,3 +582,192 @@ window.closeBuffModal = function() {
     const overlay = document.getElementById('buff-modal-overlay');
     if (overlay) overlay.style.display = 'none';
 };
+// ==========================================
+// 💾 Save & Load 시스템 (로컬 스토리지 연동)
+// ==========================================
+
+// 저장된 목록 가져오기
+function getSavedSimulations() {
+    return JSON.parse(localStorage.getItem('hsr_sim_saves') || '{}');
+}
+
+// Select 박스 목록 갱신
+window.updateSaveSelect = function() {
+    const saves = getSavedSimulations();
+    const select = document.getElementById('save-slot-select');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">저장된 사이클 선택...</option>';
+    Object.keys(saves).forEach(saveName => {
+        const opt = document.createElement('option');
+        opt.value = saveName;
+        opt.textContent = saveName;
+        select.appendChild(opt);
+    });
+};
+
+// 📊 저장 버튼 클릭 시: 모달 열기 및 데미지 리포트 렌더링
+window.openSaveModal = function() {
+    // 1. 최신 상태 반영을 위해 엔진 한 번 돌리기
+    recalculate();
+
+    const report = state.damageReport || { total: 0, byCharacter: {} };
+    const container = document.getElementById('damage-report-container');
+    
+    let html = `<div style="text-align: center; margin-bottom: 12px;">
+                    <div style="font-size: 12px; color: #94a3b8;">총 가한 피해량</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #fbbf24; text-shadow: 0 0 10px rgba(251,191,36,0.3);">
+                        ${report.total.toLocaleString()}
+                    </div>
+                </div>`;
+    
+    // 캐릭터별 딜량 퍼센테이지 바 생성
+    Object.entries(report.byCharacter).sort((a, b) => b[1] - a[1]).forEach(([name, dmg]) => {
+        const pct = report.total > 0 ? ((dmg / report.total) * 100).toFixed(1) : 0;
+        html += `
+        <div style="margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #cbd5e1; margin-bottom: 4px;">
+                <span>${name}</span>
+                <span>${dmg.toLocaleString()} (${pct}%)</span>
+            </div>
+            <div style="width: 100%; background: #334155; border-radius: 4px; height: 6px; overflow: hidden;">
+                <div style="width: ${pct}%; height: 100%; background: #3b82f6;"></div>
+            </div>
+        </div>`;
+    });
+
+    if (report.total === 0) {
+        html += `<div style="text-align:center; color:#94a3b8; font-size:12px;">이번 사이클에 가한 피해가 없습니다.</div>`;
+    }
+
+    container.innerHTML = html;
+    document.getElementById('save-modal-overlay').style.display = 'flex';
+};
+
+// 💾 실제 저장 실행
+window.executeSaveSimulation = function() {
+    const saveName = document.getElementById('save-name-input').value.trim();
+    if (!saveName) return alert('저장할 이름을 입력해주세요!');
+
+    const saves = getSavedSimulations();
+    
+    // 🎯 [순환 참조 완벽 방어] 이미 방문한 객체인지 기록하여 루프 탈출
+    const getCircularReplacer = () => {
+        const seen = new WeakSet();
+        return (key, value) => {
+            if (typeof value === "object" && value !== null) {
+                if (seen.has(value)) return undefined; 
+                seen.add(value);
+            }
+            return value;
+        };
+    };
+
+    const saveData = {
+        timestamp: new Date().toISOString(),
+        totalDamage: state.damageReport ? state.damageReport.total : 0,
+        unitData: JSON.parse(JSON.stringify(state.unitData, getCircularReplacer())),
+        actionPlans: JSON.parse(JSON.stringify(state.actionPlans, getCircularReplacer())),
+        actionTargets: JSON.parse(JSON.stringify(state.actionTargets, getCircularReplacer())),
+        insertedEvents: JSON.parse(JSON.stringify(state.insertedEvents, getCircularReplacer()))
+    };
+
+    saves[saveName] = saveData;
+    localStorage.setItem('hsr_sim_saves', JSON.stringify(saves));
+    
+    updateSaveSelect();
+    document.getElementById('save-modal-overlay').style.display = 'none';
+    alert(`[${saveName}] 사이클이 성공적으로 저장되었습니다!`);
+};
+
+// 📂 불러오기 실행
+window.loadSimulation = function() {
+    const saveName = document.getElementById('save-slot-select').value;
+    if (!saveName) return alert('불러올 사이클을 선택해주세요.');
+
+    const saves = getSavedSimulations();
+    const data = saves[saveName];
+    if (!data) return alert('데이터를 찾을 수 없습니다.');
+
+    if (!confirm(`[${saveName}] 사이클을 불러오시겠습니까?\n현재 작업 중인 내용은 덮어씌워집니다.`)) return;
+
+    // 덮어씌우기 전에 현재 메모리에 살아있는(함수가 멀쩡한) 유닛 원본 백업
+    const originalUnits = state.unitData; 
+
+    state.unitData = data.unitData.map(obj => {
+        // 1. 원본 유닛을 찾아서 뼈대(Unit인지 Enemy인지)를 정확하게 가져옵니다.
+        const original = originalUnits.find(u => String(u.unit_id) === String(obj.unit_id));
+        let restoredUnit;
+        if (original) {
+            restoredUnit = Object.create(Object.getPrototypeOf(original));
+        } else {
+            // 혹시 원본이 날아갔을 경우를 대비한 안전망
+            restoredUnit = Object.create(Unit.prototype); 
+        }
+        
+        // 2. 🎯 [Getter 충돌 방지 로직] 스마트하게 속성만 골라내서 복사합니다.
+        for (let key in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+            
+            // 프로토타입 체인을 타고 올라가며 Getter/Setter 여부를 철저하게 검사합니다.
+            let isAccessor = false;
+            let proto = Object.getPrototypeOf(restoredUnit);
+            while (proto) {
+                let desc = Object.getOwnPropertyDescriptor(proto, key);
+                if (desc && (desc.get || desc.set)) {
+                    isAccessor = true;
+                    break;
+                }
+                proto = Object.getPrototypeOf(proto);
+            }
+            
+            // Getter가 아니라 순수 데이터일 때만 값을 덮어씌웁니다! (max_hp 등 충돌 방지)
+            if (!isAccessor) {
+                restoredUnit[key] = obj[key];
+            }
+        }
+        
+        // 3. JSON으로 저장하면서 끊어졌던 순환 참조 및 날아간 함수(kit) 복구
+        if (original) {
+            if (original.kit) restoredUnit.kit = original.kit;
+            if (original.listeners) restoredUnit.listeners = original.listeners;
+        }
+
+        // 💡 ModifierManager도 객체이므로 안의 unit 속성을 다시 자신과 연결해 줍니다.
+        if (restoredUnit.modifiers && typeof restoredUnit.modifiers === 'object') {
+            restoredUnit.modifiers.unit = restoredUnit;
+        }
+        
+        return restoredUnit;
+    });
+    
+    state.actionPlans = data.actionPlans || {};
+    state.actionTargets = data.actionTargets || {};
+    state.insertedEvents = data.insertedEvents || [];
+    
+    state.selectedIdx = null;
+    
+    recalculate();
+    render();
+    alert('불러오기 완료!');
+};
+
+// 🗑️ 삭제 실행
+window.deleteSimulation = function() {
+    const saveName = document.getElementById('save-slot-select').value;
+    if (!saveName) return alert('삭제할 사이클을 선택해주세요.');
+    
+    if (!confirm(`정말 [${saveName}] 사이클을 삭제하시겠습니까?`)) return;
+
+    const saves = getSavedSimulations();
+    delete saves[saveName];
+    localStorage.setItem('hsr_sim_saves', JSON.stringify(saves));
+    
+    updateSaveSelect();
+    alert('삭제되었습니다.');
+};
+
+// 페이지 로드 시 목록 초기화
+document.addEventListener('DOMContentLoaded', () => {
+    updateSaveSelect();
+});
